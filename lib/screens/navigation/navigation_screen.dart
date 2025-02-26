@@ -12,11 +12,12 @@ import '../../providers/route_provider.dart';
 class NavigationScreen extends StatefulWidget {
   final LatLng startLocation;
   final LatLng endLocation;
-
+  final String transportMode; // 추가: 이동 수단 정보
   const NavigationScreen({
     Key? key,
     required this.startLocation,
     required this.endLocation,
+    this.transportMode = 'DRIVING', // 기본값 설정
   }) : super(key: key);
 
   @override
@@ -30,6 +31,9 @@ class _NavigationScreenState extends State<NavigationScreen> {
   bool _isNavigationInitialized = false;  // 클래스 멤버 변수로 추가
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
+  bool _isLoading = true;
+  String? _errorMessage;
+  bool _isMapInitialized = false;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -41,9 +45,23 @@ class _NavigationScreenState extends State<NavigationScreen> {
   @override
   void initState() {
     super.initState();
-    _loadMapElements();
+    _initializeMap();
   }
+  Future<void> _initializeMap() async {
+    try {
+      final locationProvider = context.read<LocationProvider>();
+      await locationProvider.startTracking();
 
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = '위치 추적 시작 실패: $e';
+        _isLoading = false;
+      });
+    }
+  }
   Future<void> _loadMapElements() async {
     final routeProvider = context.read<RouteProvider>();
     final markers = await routeProvider.createMarkers();
@@ -54,10 +72,80 @@ class _NavigationScreenState extends State<NavigationScreen> {
     });
   }
   void _updateMapElements() {
-    setState(() {
-      _markers = _createMarkers();
-      _polylines = _createPolylines();
-    });
+    try {
+      final routeProvider = context.read<RouteProvider>();
+
+      // 마커 생성
+      _markers = {
+        Marker(
+          markerId: const MarkerId('start'),
+          position: widget.startLocation,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          infoWindow: const InfoWindow(title: '출발지'),
+        ),
+        Marker(
+          markerId: const MarkerId('end'),
+          position: widget.endLocation,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: const InfoWindow(title: '도착지'),
+        ),
+      };
+
+      // 경로선 생성 (단순 직선)
+      _polylines = {
+        Polyline(
+          polylineId: const PolylineId('route'),
+          points: [widget.startLocation, widget.endLocation],
+          color: _getTransportModeColor(widget.transportMode),
+          width: 5,
+        ),
+      };
+
+      setState(() {});
+
+      // 지도 중심 이동
+      _fitMapToBounds();
+    } catch (e) {
+      print('Map elements update error: $e');
+    }
+  }
+
+  Color _getTransportModeColor(String transportMode) {
+    switch (transportMode.toUpperCase()) {
+      case 'WALK':
+        return Colors.green;
+      case 'TRANSIT':
+        return Colors.blue;
+      case 'DRIVING':
+        return Colors.red;
+      default:
+        return Colors.purple;
+    }
+  }
+
+  void _fitMapToBounds() {
+    if (_mapController == null) return;
+
+    // 마커들을 포함하는 영역 계산
+    final double minLat = widget.startLocation.latitude < widget.endLocation.latitude
+        ? widget.startLocation.latitude : widget.endLocation.latitude;
+    final double maxLat = widget.startLocation.latitude > widget.endLocation.latitude
+        ? widget.startLocation.latitude : widget.endLocation.latitude;
+    final double minLng = widget.startLocation.longitude < widget.endLocation.longitude
+        ? widget.startLocation.longitude : widget.endLocation.longitude;
+    final double maxLng = widget.startLocation.longitude > widget.endLocation.longitude
+        ? widget.startLocation.longitude : widget.endLocation.longitude;
+
+    // 여백 추가
+    final LatLngBounds bounds = LatLngBounds(
+      southwest: LatLng(minLat - 0.01, minLng - 0.01),
+      northeast: LatLng(maxLat + 0.01, maxLng + 0.01),
+    );
+
+    // 지도 이동
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngBounds(bounds, 50),
+    );
   }
 
 
@@ -202,40 +290,114 @@ class _NavigationScreenState extends State<NavigationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Consumer2<NavigationProvider, LocationProvider>(
-        builder: (context, navigationProvider, locationProvider, child) {
-          return Stack(
-            children: [
-              GoogleMap(
-                initialCameraPosition: CameraPosition(
-                  target: widget.startLocation,
-                  zoom: 15,
+      appBar: AppBar(
+        title: const Text('내비게이션'),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+          ? Center(child: Text(_errorMessage!))
+          : Stack(
+        children: [
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: widget.startLocation,
+              zoom: 15,
+            ),
+            onMapCreated: (controller) {
+              _mapController = controller;
+              if (!_isMapInitialized) {
+                _updateMapElements();
+                _isMapInitialized = true;
+              }
+            },
+            markers: _markers,
+            polylines: _polylines,
+            myLocationEnabled: true,
+            myLocationButtonEnabled: true,
+            zoomControlsEnabled: false,
+          ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
                 ),
-                onMapCreated: (controller) {
-                  _mapController = controller;
-                  _loadMapElements();
-                  if (context.read<RouteProvider>().routes.isNotEmpty) {
-                    _fitBounds(context.read<RouteProvider>().routes);
-                  }
-                },
-                markers: _markers,
-                polylines: _polylines,
-                myLocationEnabled: true,
-                myLocationButtonEnabled: false,
-                compassEnabled: true,
-                mapToolbarEnabled: false,
-                tiltGesturesEnabled: false,
-                zoomControlsEnabled: false,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
               ),
-              const TurnByTurnGuide(),
-              const NavigationStatusPanel(),
-            ],
-          );
-        },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '내비게이션 시작됨',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '이동 수단: ${_getTransportModeText(widget.transportMode)}',
+                    style: TextStyle(
+                      color: _getTransportModeColor(widget.transportMode),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                          ),
+                          child: const Text('내비게이션 종료'),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _fitMapToBounds,
+                          child: const Text('전체 경로 보기'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
+  String _getTransportModeText(String transportMode) {
+    switch (transportMode.toUpperCase()) {
+      case 'WALK':
+        return '도보';
+      case 'TRANSIT':
+        return '대중교통';
+      case 'DRIVING':
+        return '자동차';
+      default:
+        return transportMode;
+    }
+  }
   void _fitBounds(List<app_route.Route> routes) {  // 타입 수정
     if (_mapController == null || routes.isEmpty) return;
 

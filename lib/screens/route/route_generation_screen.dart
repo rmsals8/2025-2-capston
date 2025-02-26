@@ -15,6 +15,7 @@ class RouteGenerationScreen extends StatefulWidget {
 }
 
 class _RouteGenerationScreenState extends State<RouteGenerationScreen> {
+  String _selectedTransportMode = 'DRIVING'; // 기본값으로 자동차 모드 설정
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -69,6 +70,9 @@ class _RouteGenerationScreenState extends State<RouteGenerationScreen> {
 
               return Column(
                 children: [
+                  // 이동 수단 선택 UI 추가
+                  _buildTransportModeSelector(),
+
                   Expanded(
                     child: ListView.builder(
                       itemCount: provider.schedules.length,
@@ -162,6 +166,50 @@ class _RouteGenerationScreenState extends State<RouteGenerationScreen> {
             },
             child: const Icon(Icons.add),
           ),
+        ),
+      ),
+    );
+  }
+
+  // lib/screens/route/route_generation_screen.dart에 추가할 UI 구성요소
+
+  Widget _buildTransportModeSelector() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildTransportModeButton('WALK', Icons.directions_walk, '도보'),
+          _buildTransportModeButton('TRANSIT', Icons.directions_bus, '대중교통'),
+          _buildTransportModeButton('DRIVING', Icons.directions_car, '자동차'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransportModeButton(String mode, IconData icon, String label) {
+    final isSelected = _selectedTransportMode == mode;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedTransportMode = mode;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue.withOpacity(0.2) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? Colors.blue : Colors.grey,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: isSelected ? Colors.blue : Colors.grey),
+            Text(label, style: TextStyle(color: isSelected ? Colors.blue : Colors.grey)),
+          ],
         ),
       ),
     );

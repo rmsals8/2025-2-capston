@@ -87,6 +87,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
                       icon: const Icon(Icons.search),
+                      // PlaceSearchScreen에서 위치 선택 후 돌아왔을 때의 처리 부분 수정
                       onPressed: () async {
                         final result = await Navigator.push(
                           context,
@@ -96,10 +97,14 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                         );
                         if (result != null) {
                           setState(() {
+                            // 기존 코드 유지
                             _nameController.text = result['name'];
                             _locationController.text = result['address'];
                             _latitude = result['latitude'];
                             _longitude = result['longitude'];
+
+                            // 디버깅용 로그 추가
+                            print('장소 선택: ${result['name']}, 좌표: (${result['latitude']}, ${result['longitude']})');
                           });
                         }
                       },
@@ -258,23 +263,27 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
         return;
       }
 
+      // 좌표 정보가 들어갔는지 확인
+      print('장소 추가 시 좌표: lat=${_latitude}, lng=${_longitude}');
+
       Map<String, dynamic> scheduleData = {
         'id': DateTime.now().toString(),
         'name': _nameController.text,
         'type': _type,
         'duration': _duration,
         'priority': _priority,
+        // 모든 일정 유형에 위치 정보 추가 (중요!)
+        'location': _locationController.text,
+        'latitude': _latitude,
+        'longitude': _longitude,
       };
 
-      // 고정 일정일 경우에만 위치 정보 추가
+      // 고정 일정일 경우에만 시간 정보 추가
       if (_type == 'FIXED') {
         final startTime = _startTime!;
         final endTime = startTime.add(Duration(minutes: _duration));
 
         scheduleData.addAll({
-          'location': _locationController.text,
-          'latitude': _latitude,
-          'longitude': _longitude,
           'startTime': startTime.toIso8601String(),
           'endTime': endTime.toIso8601String(),
         });
@@ -288,10 +297,12 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
         _duration = 60;
         _priority = 1;
         _type = 'FIXED';
+        // 좌표 초기화 추가
+        _latitude = 0.0;
+        _longitude = 0.0;
       });
     }
   }
-
   Future<void> _submitSchedules() async {
     if (_schedules.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -302,13 +313,33 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
 
     try {
       final scheduleProvider = Provider.of<ScheduleProvider>(context, listen: false);
-      print('Submitting schedules: $_schedules'); // 디버깅용 로그
 
-      final optimizedData = await scheduleProvider.optimizeSchedules(_schedules);
+      // 좌표 형식을 수정한 복사본 생성
+      List<Map<String, dynamic>> formattedSchedules = _schedules.map((schedule) {
+        Map<String, dynamic> copy = Map<String, dynamic>.from(schedule);
+
+        // 좌표가 잘못된 형식인지 확인 (과학적 표기법이나 너무 큰 숫자)
+        if (copy['latitude'] != null && copy['latitude'].toString().contains('E')) {
+          double lat = copy['latitude'];
+          double lng = copy['longitude'];
+
+          // 큰 숫자를 올바른 형식으로 변환 (예: 355437482.0 -> 35.5437482)
+          if (lat > 180) {
+            copy['latitude'] = lat / 10000000;
+          }
+          if (lng > 180) {
+            copy['longitude'] = lng / 10000000;
+          }
+        }
+
+        return copy;
+      }).toList();
+
+      print('변환된 좌표로 제출: $formattedSchedules');
+      final optimizedData = await scheduleProvider.optimizeSchedules(formattedSchedules);
 
       if (!mounted) return;
 
-      // 최적화 성공 시 다음 화면으로 이동
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -320,7 +351,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
     } catch (e) {
       if (!mounted) return;
 
-      // 에러 메시지를 사용자 친화적으로 표시
+      // 에러 처리
       String errorMessage = '일정 최적화 중 오류가 발생했습니다';
       if (e.toString().contains('최소 하나의 고정 일정이 필요합니다')) {
         errorMessage = '최소 하나의 고정 일정이 필요합니다';

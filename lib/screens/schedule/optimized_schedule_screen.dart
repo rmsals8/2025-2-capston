@@ -465,7 +465,44 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
 
     return ''; // 기타 경우
   }
+// 유틸리티 함수 - 다양한 형태의 위치 데이터에서 좌표 추출
+  Map<String, double> extractCoordinates(dynamic locationData) {
+    double latitude = 0.0;
+    double longitude = 0.0;
 
+    try {
+      if (locationData is Map) {
+        latitude = _parseDouble(locationData['latitude']) ?? 0.0;
+        longitude = _parseDouble(locationData['longitude']) ?? 0.0;
+      } else if (locationData is String && locationData.contains('{')) {
+        try {
+          Map<String, dynamic> locationMap = json.decode(locationData);
+          latitude = _parseDouble(locationMap['latitude']) ?? 0.0;
+          longitude = _parseDouble(locationMap['longitude']) ?? 0.0;
+        } catch (e) {
+          print('위치 문자열 파싱 오류: $e');
+        }
+      }
+    } catch (e) {
+      print('좌표 추출 오류: $e');
+    }
+
+    return {'latitude': latitude, 'longitude': longitude};
+  }
+
+  double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      try {
+        return double.parse(value);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
   Widget _buildRouteButton(BuildContext context, List<Map<String, dynamic>> schedules) {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -483,64 +520,64 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
 
               // 좌표 데이터가 포함된 형태로 변환
               final formattedSchedules = schedules.map((schedule) {
-                double latitude, longitude;
-                String locationName;
+                // 기본 좌표값
+                double latitude = schedule['latitude'] ?? 0.0;
+                double longitude = schedule['longitude'] ?? 0.0;
 
-                // location이 문자열이고 JSON 형식인 경우
-                if (schedule['location'] is String) {
-                  String locationStr = schedule['location'].toString();
-                  if (locationStr.startsWith('{')) {
+                // location 객체에서 좌표 추출
+                if (latitude == 0.0 || longitude == 0.0) {
+                  if (schedule['location'] is Map) {
+                    // Map 형태의 location
+                    latitude = schedule['location']['latitude'] ?? latitude;
+                    longitude = schedule['location']['longitude'] ?? longitude;
+                  } else if (schedule['location'] is String && schedule['location'].toString().startsWith('{')) {
+                    // JSON 문자열 형태의 location
                     try {
-                      final Map<String, dynamic> locationObj = json.decode(locationStr);
-                      latitude = _parseCoordinate(locationObj['latitude']);
-                      longitude = _parseCoordinate(locationObj['longitude']);
-                      locationName = locationObj['name'] ?? '';
+                      Map<String, dynamic> locationMap = json.decode(schedule['location'].toString());
+                      latitude = locationMap['latitude'] ?? latitude;
+                      longitude = locationMap['longitude'] ?? longitude;
                     } catch (e) {
-                      print('JSON 파싱 오류: $e');
-                      latitude = schedule['latitude'] ?? 0.0;
-                      longitude = schedule['longitude'] ?? 0.0;
-                      locationName = schedule['name'] ?? '';
+                      print('위치 문자열 파싱 오류: $e');
                     }
-                  } else {
-                    // 일반 문자열
-                    latitude = schedule['latitude'] ?? 0.0;
-                    longitude = schedule['longitude'] ?? 0.0;
-                    locationName = locationStr;
                   }
-                } else {
-                  // 기본 값
-                  latitude = schedule['latitude'] ?? 0.0;
-                  longitude = schedule['longitude'] ?? 0.0;
-                  locationName = schedule['name'] ?? '';
                 }
 
+                print('좌표 추출 결과: ${schedule['name']} - lat: $latitude, lng: $longitude');
+
                 return {
-                  'name': schedule['name'],
+                  'name': schedule['name'] ?? '',
                   'latitude': latitude,
                   'longitude': longitude,
-                  'location': locationName,
-                  'visitTime': schedule['startTime'],
+                  'location': schedule['name'] ?? '',  // location은 문자열로 변환
+                  'visitTime': schedule['startTime'] ?? DateTime.now().toIso8601String(),
                   'duration': schedule['duration'] ?? 60,
                 };
               }).toList();
 
-              // 디버깅용 로그
-              print('Formatted schedules: $formattedSchedules');
+              print('Formatted schedules for routes (with extracted coordinates): $formattedSchedules');
 
+              // 경로 생성 요청
               await routeProvider.getRecommendedRoutes(formattedSchedules);
 
               if (context.mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const RouteListScreen(),
-                  ),
-                );
+                if (routeProvider.routes.isNotEmpty) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const RouteListScreen(),
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('경로를 생성할 수 없습니다.')),
+                  );
+                }
               }
             } catch (e) {
+              print('Error creating route: $e');
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('경로 추천 중 오류 발생: $e')),
+                  SnackBar(content: Text('경로 생성 중 오류가 발생했습니다: $e')),
                 );
               }
             }

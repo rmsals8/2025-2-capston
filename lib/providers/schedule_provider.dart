@@ -28,26 +28,33 @@ class ScheduleProvider with ChangeNotifier {
 
       print('Submitting schedules: $schedules');
 
-      // 좌표값 변환
-      final normalizedSchedules = schedules.map((schedule) {
-        var newSchedule = Map<String, dynamic>.from(schedule);
-        if (schedule['latitude'] != null) {
-          newSchedule['latitude'] = (schedule['latitude'] as double) / 10000000.0;
-          newSchedule['longitude'] = (schedule['longitude'] as double) / 10000000.0;
+      // 좌표값 수정
+      schedules = schedules.map((schedule) {
+        Map<String, dynamic> copy = Map<String, dynamic>.from(schedule);
+
+        // 너무 큰 좌표값 수정
+        if (copy['latitude'] != null) {
+          double lat = copy['latitude'];
+          double lng = copy['longitude'];
+
+          if (lat > 180) {
+            copy['latitude'] = lat / 10000000;
+          }
+          if (lng > 180) {
+            copy['longitude'] = lng / 10000000;
+          }
         }
-        return newSchedule;
+        return copy;
       }).toList();
 
-      // 고정 일정과 유연한 일정 분리
-      final fixedSchedules = normalizedSchedules
+      final fixedSchedules = schedules
           .where((s) => s['type'] == 'FIXED')
           .toList();
 
-      final flexibleSchedules = normalizedSchedules
+      final flexibleSchedules = schedules
           .where((s) => s['type'] == 'FLEXIBLE')
           .toList();
 
-      // API 요청 데이터 구성
       final requestBody = {
         'fixedSchedules': fixedSchedules,
         'flexibleSchedules': flexibleSchedules
@@ -58,10 +65,7 @@ class ScheduleProvider with ChangeNotifier {
       final response = await http.post(
           Uri.parse('$baseUrl/schedules/optimize-1'),
           headers: {'Content-Type': 'application/json'},
-          body: json.encode(requestBody)
-      );
-
-      print('Server response: ${response.body}');
+          body: json.encode(requestBody));
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -71,7 +75,6 @@ class ScheduleProvider with ChangeNotifier {
       } else {
         throw Exception('서버 응답 오류: ${response.statusCode}\n${response.body}');
       }
-
     } catch (e, stackTrace) {
       print('Error during optimization: $e');
       print('Stack trace: $stackTrace');
@@ -81,7 +84,6 @@ class ScheduleProvider with ChangeNotifier {
       throw Exception('일정 최적화 중 오류가 발생했습니다: $e');
     }
   }
-
 // 가장 적합한 장소 찾기
   Map<String, dynamic> findBestPlace(
       List<Map<String, dynamic>> places,
