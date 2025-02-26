@@ -2,8 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/recommended_place.dart';
+import '../models/visit_history.dart';
 import '../services/place_recommendation_service.dart';
 import '../screens/navigation/navigation_screen.dart';
+import '../services/visit_history_service.dart';
 class PlaceRecommendationsScreen extends StatefulWidget {
   final LatLng currentLocation;
   final String title;
@@ -313,11 +315,30 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                 children: [
                   // 저장 버튼
                   TextButton.icon(
-                    onPressed: () {
-                      // TODO: 방문 기록에 저장
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('방문 장소로 저장되었습니다')),
-                      );
+                    onPressed: () async {
+                      try {
+                        final visitHistoryService = VisitHistoryService();
+                        await visitHistoryService.addVisitHistory(
+                          VisitHistory(
+                            id: '', // 서비스에서 UUID로 대체됩니다
+                            placeName: place.name,
+                            placeId: place.id,
+                            category: place.category,
+                            latitude: place.latitude,
+                            longitude: place.longitude,
+                            address: place.address,
+                            visitDate: DateTime.now(),
+                          ),
+                        );
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('방문 장소로 저장되었습니다')),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('저장 실패: $e')),
+                        );
+                      }
                     },
                     icon: const Icon(Icons.bookmark_border, size: 18),
                     label: const Text('저장'),
