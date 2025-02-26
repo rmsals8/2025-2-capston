@@ -1,5 +1,4 @@
 // lib/screens/route/route_list_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -7,9 +6,14 @@ import '../../models/route_segment.dart';
 import '../../providers/route_provider.dart';
 import '../../providers/navigation_provider.dart';
 import '../navigation/navigation_screen.dart';
-import '../navigation/navigation_details_screen.dart'; // 추가
+import '../navigation/navigation_details_screen.dart';
 import '../../models/route.dart' as app_route;
 import 'dart:math';
+import '../place_recommendations_screen.dart';
+import '../../services/location_service.dart';
+import '../../services/place_recommendation_service.dart';
+import '../../models/route_info.dart';
+import '../../utils/route_converter.dart';
 
 class RouteListScreen extends StatefulWidget {
   const RouteListScreen({Key? key}) : super(key: key);
@@ -22,6 +26,8 @@ class _RouteListScreenState extends State<RouteListScreen> {
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
+  int _selectedRouteIndex = 0; // 선택된 경로 인덱스
+  final LocationService _locationService = LocationService(); // 위치 서비스 인스턴스 추가
 
   @override
   void initState() {
@@ -130,8 +136,6 @@ class _RouteListScreenState extends State<RouteListScreen> {
   }
 
   // 교통 수단 선택 바텀시트 표시
-// lib/screens/route/route_list_screen.dart의 _showTransportOptions 메서드 수정
-
   void _showTransportOptions(BuildContext context, app_route.Route route, int segmentIndex) {
     final segment = route.segments[segmentIndex];
     final startLat = segment.startLat;
@@ -190,95 +194,104 @@ class _RouteListScreenState extends State<RouteListScreen> {
               ],
             ),
             const SizedBox(height: 20),
+            // 경로 주변 장소 추천 버튼 추가
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () {
+                    _showNearbyPlaces(context, startLat, startLon, endLat, endLon);
+                  },
+                  child: const Text('경로 주변 장소 추천'),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-// 2. 내비게이션 직접 시작 메서드 추가 (이것이 핵심)
-  // route_list_screen.dart 파일의 _startDirectNavigation 메서드 수정
+  // 주변 장소 추천 기능 구현
+  void _showNearbyPlaces(BuildContext context, double startLat, double startLon, double endLat, double endLon) async {
+    try {
+      Navigator.pop(context); // 현재 바텀시트 닫기
 
+      // 로딩 표시
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('주변 장소를 검색 중입니다...')),
+      );
+
+      // 현재 위치 가져오기 (출발지로 사용)
+      LatLng currentLocation;
+      try {
+        final position = await _locationService.getCurrentLocation();
+        currentLocation = LatLng(position.latitude, position.longitude);
+      } catch (e) {
+        // 현재 위치를 가져올 수 없는 경우 출발지 좌표 사용
+        currentLocation = LatLng(startLat, startLon);
+      }
+
+      // 경로 중간점 계산 (시각화를 위한 중심점)
+      final centerLat = (startLat + endLat) / 2;
+      final centerLng = (startLon + endLon) / 2;
+      final centerLocation = LatLng(centerLat, centerLng);
+
+      // 장소 추천 화면으로 이동
+      if (context.mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PlaceRecommendationsScreen(
+              currentLocation: currentLocation,
+              title: '경로 주변 추천 장소',
+              route: null, // RouteInfo가 아니라서 경로 주변 추천은 동작하지 않음
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('장소 추천을 불러올 수 없습니다: $e')),
+        );
+      }
+    }
+  }
+
+  // 내비게이션 직접 시작 메서드 (수정)
   void _startDirectNavigation(BuildContext context, double startLat, double startLon, double endLat, double endLon, String transportMode, String startName, String endName) {
-    // 좌표가 정상 범위에 있는지 확인하고 필요시 변환
-    final normalizedStartLat = _normalizeCoordinate(startLat, true);
-    final normalizedStartLon = _normalizeCoordinate(startLon, false);
-    final normalizedEndLat = _normalizeCoordinate(endLat, true);
-    final normalizedEndLon = _normalizeCoordinate(endLon, false);
+    try {
+      // 좌표 검증
+      if (startLat < -90 || startLat > 90 ||
+          endLat < -90 || endLat > 90 ||
+          startLon < -180 || startLon > 180 ||
+          endLon < -180 || endLon > 180) {
+        throw Exception('유효하지 않은 좌표입니다.');
+      }
 
-    print('내비게이션 시작:');
-    print('원본 출발지 좌표: $startLat, $startLon');
-    print('변환 출발지 좌표: $normalizedStartLat, $normalizedStartLon');
-    print('원본 도착지 좌표: $endLat, $endLon');
-    print('변환 도착지 좌표: $normalizedEndLat, $normalizedEndLon');
-
-    // 바로 NavigationDetailsScreen으로 이동
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => NavigationDetailsScreen(
-          startLat: normalizedStartLat,
-          startLon: normalizedStartLon,
-          endLat: normalizedEndLat,
-          endLon: normalizedEndLon,
-          startName: startName,
-          endName: endName,
-          transportMode: transportMode,
+      // 내비게이션 화면으로 이동
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => NavigationDetailsScreen(
+            startLat: startLat,
+            startLon: startLon,
+            endLat: endLat,
+            endLon: endLon,
+            startName: startName,
+            endName: endName,
+            transportMode: transportMode,
+          ),
         ),
-      ),
-    );
-  }
-
-// route_list_screen.dart 파일에 _normalizeCoordinate 함수 추가
-  double _normalizeCoordinate(double value, bool isLatitude) {
-    // 정상 범위 확인
-    final double minValue = isLatitude ? -90.0 : -180.0;
-    final double maxValue = isLatitude ? 90.0 : 180.0;
-
-    // 이미 올바른 범위에 있는 경우 그대로 반환
-    if (value >= minValue && value <= maxValue) {
-      return value;
-    }
-
-    // 큰 숫자를 가진 좌표는 변환 필요
-    if (value.abs() > 1000000) {
-      // 숫자가 매우 큰 경우 (예: 355437482.0 -> 35.5437482)
-      return value / 10000000.0;
-    } else if (value.abs() > 100000) {
-      // 숫자가 큰 경우 (예: 35543748.0 -> 35.543748)
-      return value / 1000000.0;
-    } else if (value.abs() > 10000) {
-      // 중간 크기 (예: 3554374.0 -> 35.54374)
-      return value / 100000.0;
-    } else if (value.abs() > 1000) {
-      // 더 작은 중간 크기 (예: 355437.0 -> 35.5437)
-      return value / 10000.0;
-    } else if (value.abs() > 180) {
-      // 작은 숫자 (예: 355.0 -> 35.5)
-      return value / 10.0;
-    }
-
-    // 다른 방법으로도 해결이 안 되면 한국 영역의 일반적인 좌표로 대체
-    // 울산 지역의 평균 좌표를 반환 (울산광역시 남구)
-    if (isLatitude) {
-      return 35.5384;  // 울산 남구의 위도
-    } else {
-      return 129.3114; // 울산 남구의 경도
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('내비게이션을 시작할 수 없습니다: $e')),
+      );
     }
   }
-
-// 좌표가 유효한 한국 영역 내에 있는지 확인
-  bool _isValidCoordinate(double lat, double lon) {
-    // 한국 영역 대략적인 범위
-    const double MIN_KOREA_LAT = 33.0;
-    const double MAX_KOREA_LAT = 39.0;
-    const double MIN_KOREA_LON = 124.0;
-    const double MAX_KOREA_LON = 132.0;
-
-    return lat >= MIN_KOREA_LAT && lat <= MAX_KOREA_LAT &&
-        lon >= MIN_KOREA_LON && lon <= MAX_KOREA_LON;
-  }
-// lib/screens/route/route_list_screen.dart의 _findRouteWithMode 메서드 수정
 
   void _findRouteWithMode(BuildContext context, double startLat, double startLon, double endLat, double endLon, String transportMode, String startName, String endName) async {
     Navigator.pop(context);  // 바텀시트 닫기
@@ -381,6 +394,26 @@ class _RouteListScreenState extends State<RouteListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('추천 경로'),
+        actions: [
+          // 방문 기록 보기 버튼
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: () {
+              // 방문 기록 화면으로 이동 (해당 화면이 구현되어 있다면)
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const Scaffold(
+                    body: Center(
+                      child: Text('방문 기록 화면이 곧 구현될 예정입니다.'),
+                    ),
+                  ),
+                ),
+              );
+            },
+            tooltip: '방문 기록',
+          )
+        ],
       ),
       body: Consumer<RouteProvider>(
         builder: (context, routeProvider, child) {
@@ -436,7 +469,6 @@ class _RouteListScreenState extends State<RouteListScreen> {
               ),
 
               // 경로 리스트
-              // 경로 리스트
               Expanded(
                 child: ListView.builder(
                   itemCount: routeProvider.routes.length,
@@ -445,69 +477,99 @@ class _RouteListScreenState extends State<RouteListScreen> {
                     final route = routeProvider.routes[index];
                     return Card(
                       margin: const EdgeInsets.only(bottom: 16),
+                      elevation: index == _selectedRouteIndex ? 4 : 1,
                       child: InkWell(
                         onTap: () {
-                          // 경로 선택 시 바로 첫 번째 세그먼트로 내비게이션 시작
-                          if (route.segments.isNotEmpty) {
-                            final segment = route.segments[0];
-                            // 직접 내비게이션 화면으로 이동
-                            _startDirectNavigation(
-                                context,
-                                segment.startLat,
-                                segment.startLon,
-                                segment.endLat,
-                                segment.endLon,
-                                route.transportMode, // 이미 선택된 이동 수단 사용
-                                segment.startLocation,
-                                segment.endLocation
-                            );
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('경로 정보가 없습니다.')),
-                            );
-                          }
+                          setState(() {
+                            _selectedRouteIndex = index;
+                          });
+
+                          // 경로 선택 시 해당 경로 강조
+                          _updateRouteHighlight(routeProvider.routes, index);
                         },
                         child: Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Row(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              CircleAvatar(
-                                backgroundColor: Colors.blue,
-                                child: Text('${index + 1}'),
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    backgroundColor: Colors.blue,
+                                    child: Text('${index + 1}'),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${route.segments.first.startLocation} → ${route.segments.last.endLocation}',
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${route.totalDuration}분 • ${route.totalDistance.toStringAsFixed(1)}km',
+                                          style: TextStyle(
+                                            color: Colors.grey[600],
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        // 이동 수단 표시 추가
+                                        Text(
+                                          _getTransportModeText(route.transportMode),
+                                          style: TextStyle(
+                                            color: _getTransportModeColor(route.transportMode),
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${route.segments.first.startLocation} → ${route.segments.last.endLocation}',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${route.totalDuration}분 • ${route.totalDistance.toStringAsFixed(1)}km',
-                                      style: TextStyle(
-                                        color: Colors.grey[600],
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    // 이동 수단 표시 추가
-                                    Text(
-                                      _getTransportModeText(route.transportMode),
-                                      style: TextStyle(
-                                        color: _getTransportModeColor(route.transportMode),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              const SizedBox(height: 12),
+                              // 버튼 추가
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  // 경로 주변 장소 추천 버튼
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      if (route.segments.isNotEmpty) {
+                                        _showPlacesAlongRoute(context, route);
+                                      }
+                                    },
+                                    icon: const Icon(Icons.place, size: 18),
+                                    label: const Text('주변 장소'),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // 내비게이션 시작 버튼
+                                  ElevatedButton.icon(
+                                    onPressed: () {
+                                      if (route.segments.isNotEmpty) {
+                                        final segment = route.segments[0];
+                                        _startDirectNavigation(
+                                            context,
+                                            segment.startLat,
+                                            segment.startLon,
+                                            segment.endLat,
+                                            segment.endLon,
+                                            route.transportMode,
+                                            segment.startLocation,
+                                            segment.endLocation
+                                        );
+                                      }
+                                    },
+                                    icon: const Icon(Icons.navigation, size: 18),
+                                    label: const Text('길안내'),
+                                  ),
+                                ],
                               ),
-                              Icon(Icons.navigation, color: Colors.blue),
                             ],
                           ),
                         ),
@@ -516,7 +578,6 @@ class _RouteListScreenState extends State<RouteListScreen> {
                   },
                 ),
               ),
-
             ],
           );
         },
@@ -524,13 +585,129 @@ class _RouteListScreenState extends State<RouteListScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _mapController?.dispose();
-    super.dispose();
+  // 경로 선택 시 시각적으로 강조
+  void _updateRouteHighlight(List<app_route.Route> routes, int selectedIndex) {
+    final colors = [Colors.blue.withOpacity(0.5), Colors.red.withOpacity(0.5), Colors.green.withOpacity(0.5)];
+    final selectedColors = [Colors.blue, Colors.red, Colors.green];
+
+    setState(() {
+      _polylines.clear();
+
+      for (int i = 0; i < routes.length; i++) {
+        final route = routes[i];
+        if (route.segments.isEmpty) continue;
+
+        List<LatLng> points = [];
+        for (var segment in route.segments) {
+          points.add(LatLng(segment.startLat, segment.startLon));
+          points.add(LatLng(segment.endLat, segment.endLon));
+        }
+
+        // 선택된 경로는 진한 색상과 두꺼운 선, 나머지는 옅은 색상과 얇은 선
+        _polylines.add(Polyline(
+          polylineId: PolylineId('route_$i'),
+          points: points,
+          color: i == selectedIndex ? selectedColors[i % selectedColors.length] : colors[i % colors.length],
+          width: i == selectedIndex ? 7 : 3,
+        ));
+      }
+    });
   }
 
-// 3. 이동 수단 표시용 헬퍼 메서드 추가
+  // 경로 주변 장소 추천 다이얼로그 표시
+  void _showPlacesAlongRoute(BuildContext context, app_route.Route route) async {
+    try {
+      if (route.segments.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('경로 정보가 없습니다')),
+        );
+        return;
+      }
+
+      // 로딩 표시
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return const Dialog(
+            child: Padding(
+              padding: EdgeInsets.all(20.0),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 20),
+                  Text("경로 주변 장소를 검색 중입니다..."),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
+      // 경로 정보 가져오기
+      final currentLocation = LatLng(
+          route.segments.first.startLat,
+          route.segments.first.startLon
+      );
+
+      // app_route.Route를 RouteInfo로 변환
+      final routeInfo = RouteConverter.convertToRouteInfo(route);
+
+      print('경로 변환: ${routeInfo.points.length}개 포인트, ${routeInfo.samplePoints.length}개 샘플 포인트');
+
+      // 경로 주변 장소 검색
+      final recommendationService = PlaceRecommendationService();
+      final places = await recommendationService.getPlacesAlongRoute(
+        routeInfo,
+        radius: 1000, // 경로에서 1km 이내
+      );
+
+      print('경로 주변 추천 장소 수: ${places.length}');
+
+      // 로딩 다이얼로그 닫기
+      if (context.mounted) {
+        Navigator.pop(context);
+      }
+
+      // 결과가 없는 경우
+      if (places.isEmpty && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('경로 주변에 추천할 장소가 없습니다')),
+        );
+        return;
+      }
+
+      // 장소 추천 화면으로 이동
+      if (context.mounted) {
+        final startName = route.segments.first.startLocation;
+        final endName = route.segments.last.endLocation;
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PlaceRecommendationsScreen(
+              currentLocation: currentLocation,
+              title: '$startName → $endName 주변 추천',
+              route: routeInfo,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // 로딩 다이얼로그가 열려 있으면 닫기
+      if (context.mounted) {
+        Navigator.pop(context);
+
+        // 오류 메시지 표시
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('장소 추천을 불러올 수 없습니다: $e')),
+        );
+      }
+    }
+  }
+
+  // 이동 수단 텍스트 변환
   String _getTransportModeText(String transportMode) {
     switch (transportMode.toUpperCase()) {
       case 'WALK':
@@ -555,5 +732,11 @@ class _RouteListScreenState extends State<RouteListScreen> {
       default:
         return Colors.grey;
     }
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
   }
 }

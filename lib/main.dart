@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -15,10 +16,13 @@ import 'providers/route_provider.dart';
 import 'providers/location_provider.dart';
 import 'providers/navigation_provider.dart';
 import 'services/navigation_service.dart';
+import 'services/visit_history_service.dart';  // 추가: 방문 기록 서비스
+import 'services/place_recommendation_service.dart';  // 추가: 장소 추천 서비스
 
 Future<void> initializeApp() async {
   // Flutter 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
+
 
   // Google Maps 렌더러 초기화
   final GoogleMapsFlutterPlatform mapsImplementation = GoogleMapsFlutterPlatform.instance;
@@ -55,11 +59,15 @@ void main() async {
     final scheduleProvider = ScheduleProvider();
     final routeProvider = RouteProvider();
     final navigationProvider = NavigationProvider();
+    final visitHistoryService = VisitHistoryService();  // 추가: 방문 기록 서비스
+    final placeRecommendationService = PlaceRecommendationService();  // 추가: 장소 추천 서비스
 
     runApp(
       MultiProvider(
         providers: [
           Provider<NavigationService>.value(value: navigationService),
+          Provider<VisitHistoryService>.value(value: visitHistoryService),  // 추가
+          Provider<PlaceRecommendationService>.value(value: placeRecommendationService),  // 추가
           ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
           ChangeNotifierProvider<LocationProvider>.value(value: locationProvider),
           ChangeNotifierProvider<ScheduleProvider>.value(value: scheduleProvider),
@@ -76,13 +84,14 @@ void main() async {
       MultiProvider(
         providers: [
           Provider<NavigationService>(create: (_) => NavigationService()),
+          Provider<VisitHistoryService>(create: (_) => VisitHistoryService()),  // 추가
+          Provider<PlaceRecommendationService>(create: (_) => PlaceRecommendationService()),  // 추가
           ChangeNotifierProvider<AuthProvider>(create: (_) => AuthProvider()),
           ChangeNotifierProvider<LocationProvider>(create: (_) => LocationProvider()),
           ChangeNotifierProvider<ScheduleProvider>(create: (_) => ScheduleProvider()),
           ChangeNotifierProvider<RouteProvider>(create: (_) => RouteProvider()),
           ChangeNotifierProvider<NavigationProvider>(
-            create: (context) => NavigationProvider(
-            ),
+            create: (context) => NavigationProvider(),
           ),
         ],
         child: const MyApp(isLoggedIn: false),

@@ -46,7 +46,7 @@ dependencies:
   http: ^1.1.0
   dio: ^5.4.0
   connectivity_plus: 5.0.2
-
+  uuid: ^4.5.1
   # 위치 및 지도
   flutter_polyline_points: ^2.1.0
   google_maps_flutter: ^2.5.0
@@ -54,7 +54,7 @@ dependencies:
   geolocator: ^13.0.2
   geocoding: ^3.0.0
   web_socket_channel: ^2.4.0
-
+  flutter_dotenv: ^5.0.2
   # 음성 인식
   speech_to_text: ^7.0.0
   permission_handler: ^11.1.0
