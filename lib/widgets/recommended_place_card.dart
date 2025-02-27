@@ -239,23 +239,19 @@ class RecommendedPlaceCard extends StatelessWidget {
     return Icons.place;
   }
 
-  // 방문 기록에 추가
   Future<void> _addToVisitHistory(BuildContext context) async {
     try {
       final visitHistoryService = VisitHistoryService();
 
-      final history = VisitHistory(
-        id: DateTime.now().toIso8601String(),
-        placeName: place.name,
-        placeId: place.id,
-        category: place.category,
-        latitude: place.latitude,
-        longitude: place.longitude,
-        address: place.address,
-        visitDate: DateTime.now(),
+      // VisitHistory 객체를 직접 전달하는 대신 개별 필드를 전달
+      await visitHistoryService.addVisitHistory(
+          place.name,
+          place.id,
+          place.category,
+          place.latitude,
+          place.longitude,
+          place.address
       );
-
-      await visitHistoryService.addVisitHistory(history);
 
       // 성공 메시지 표시
       if (context.mounted) {

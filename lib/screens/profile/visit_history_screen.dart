@@ -15,7 +15,7 @@ class VisitHistoryScreen extends StatefulWidget {
   State<VisitHistoryScreen> createState() => _VisitHistoryScreenState();
 }
 
-class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProviderStateMixin  {
+class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProviderStateMixin {
   final VisitHistoryService _historyService = VisitHistoryService();
 
   List<VisitHistory> _histories = [];
@@ -25,12 +25,14 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
   String? _errorMessage;
   late TabController _tabController;
   List<String> _categories = ['전체'];
+  String? _selectedCategory;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 1, vsync: this); // 초기값으로 1개 탭
     _loadData();
+    _loadCategoryStats();
   }
 
   @override
@@ -47,7 +49,9 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
 
     try {
       // 방문 기록 불러오기
-      _histories = await _historyService.getVisitHistories();
+      _histories = await _historyService.getVisitHistories(
+          category: _selectedCategory
+      );
 
       // 카테고리별 분류 및 통계 계산
       _categoryCounts = {};
@@ -87,6 +91,17 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     }
   }
 
+  Future<void> _loadCategoryStats() async {
+    try {
+      final stats = await _historyService.getCategoryStats();
+      setState(() {
+        _categoryCounts = stats.map((key, value) => MapEntry(key, value.toInt()));
+      });
+    } catch (e) {
+      print('Error loading category stats: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -101,6 +116,19 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
             icon: const Icon(Icons.recommend),
             onPressed: _navigateToRecommendations,
             tooltip: '맞춤 추천',
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'clear') {
+                _showClearHistoryDialog();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(
+                value: 'clear',
+                child: Text('모든 기록 삭제'),
+              ),
+            ],
           ),
         ],
         bottom: _isLoading || _errorMessage != null ? null : TabBar(
@@ -248,6 +276,60 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     );
   }
 
+  Widget _buildStatisticsCard() {
+    int totalVisits = _histories.fold(0, (sum, history) => sum + history.visitCount);
+    return Card(
+      margin: const EdgeInsets.all(8.0),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildStatItem(
+              icon: Icons.place,
+              value: _histories.length.toString(),
+              label: '방문 장소',
+            ),
+            _buildStatItem(
+              icon: Icons.repeat,
+              value: totalVisits.toString(),
+              label: '총 방문 횟수',
+            ),
+            _buildStatItem(
+              icon: Icons.category,
+              value: _categoryCounts.length.toString(),
+              label: '카테고리',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatItem({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, color: Theme.of(context).primaryColor),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12),
+        ),
+      ],
+    );
+  }
+
   void _navigateToRecommendations() async {
     // 현재 위치 확인
     final locationProvider = Provider.of<LocationProvider>(context, listen: false);
@@ -332,15 +414,7 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
                 title: const Text('비슷한 장소 찾기'),
                 onTap: () {
                   Navigator.pop(context);
-                  _findSimilarPlaces(history);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.navigate_next),
-                title: const Text('내비게이션 시작'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _startNavigation(history);
+                  _showSimilarPlacesByCategory(history.category);
                 },
               ),
               ListTile(
@@ -375,6 +449,8 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
             Text('최근 방문: ${_formatDate(history.visitDate)}'),
             const SizedBox(height: 8),
             Text('방문 횟수: ${history.visitCount}회'),
+            const SizedBox(height: 16),
+            Text('좌표: ${history.latitude}, ${history.longitude}'),
           ],
         ),
         actions: [
@@ -382,16 +458,22 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
             onPressed: () => Navigator.pop(context),
             child: const Text('닫기'),
           ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // 지도에서 위치 보기 기능 구현 (향후 추가)
+            },
+            child: const Text('지도에서 보기'),
+          ),
         ],
       ),
     );
   }
 
-  void _findSimilarPlaces(VisitHistory history) async {
-    // 현재 위치 구하기
+  Future<void> _showSimilarPlaces() async {
     final locationProvider = Provider.of<LocationProvider>(context, listen: false);
     try {
-      final currentLocation = await locationProvider.getCurrentLocation();
+      LatLng currentLocation = await locationProvider.getCurrentLocation();
 
       if (!mounted) return;
 
@@ -401,8 +483,7 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
         MaterialPageRoute(
           builder: (context) => PlaceRecommendationsScreen(
             currentLocation: currentLocation,
-            title: '${history.category} 추천 장소',
-            category: history.category,
+            title: '방문 기록 기반 추천',
           ),
         ),
       );
@@ -410,14 +491,35 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('장소를 찾을 수 없습니다: $e')),
+        const SnackBar(content: Text('현재 위치를 가져올 수 없습니다')),
       );
     }
   }
 
-  void _startNavigation(VisitHistory history) {
-    // 내비게이션 화면으로 이동하는 코드
-    // (구현 생략 - 필요에 따라 구현)
+  Future<void> _showSimilarPlacesByCategory(String category) async {
+    final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+    try {
+      LatLng currentLocation = await locationProvider.getCurrentLocation();
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PlaceRecommendationsScreen(
+            currentLocation: currentLocation,
+            title: '$category 추천',
+            category: category,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('현재 위치를 가져올 수 없습니다')),
+      );
+    }
   }
 
   Future<void> _deleteHistory(VisitHistory history) async {
@@ -425,13 +527,25 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
       await _historyService.deleteVisitHistory(history.id);
 
       // 목록 갱신
-      _loadData();
+      setState(() {
+        _histories.removeWhere((h) => h.id == history.id);
+
+        // 카테고리 카운트 갱신
+        if (_categoryCounts[history.category] != null) {
+          _categoryCounts[history.category] = _categoryCounts[history.category]! - 1;
+          if (_categoryCounts[history.category] == 0) {
+            _categoryCounts.remove(history.category);
+          }
+        }
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('방문 기록이 삭제되었습니다')),
         );
       }
+
+      _loadData(); // 데이터 다시 로드
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -476,14 +590,21 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
 
   Future<void> _clearAllHistories() async {
     try {
-      await _historyService.clearAllVisitHistories();
-      _loadData();
+      await _historyService.deleteAllVisitHistories();
+
+      // 목록 갱신
+      setState(() {
+        _histories.clear();
+        _categoryCounts.clear();
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('모든 방문 기록이 삭제되었습니다')),
         );
       }
+
+      _loadData(); // 데이터 다시 로드
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -491,5 +612,14 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
         );
       }
     }
+  }
+
+  int _getRecentVisitCount() {
+    final now = DateTime.now();
+    final firstDayOfMonth = DateTime(now.year, now.month, 1);
+
+    return _histories
+        .where((h) => h.visitDate.isAfter(firstDayOfMonth))
+        .length;
   }
 }

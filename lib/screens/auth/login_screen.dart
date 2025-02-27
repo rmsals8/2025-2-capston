@@ -223,7 +223,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
           // 토큰이 저장되었는지 확인하기 위한 디버그 출력
           print('Tokens saved - Access Token: ${authResponse['accessToken']}');
-
+// 토큰이 저장되었는지 확인하기 위한 디버그 출력
+          print('Tokens saved - Access Token: ${authResponse['accessToken']}');
+          print('Verification check - Retrieved token: ${prefs.getString('access_token')}');
           // 자동 로그인 설정 저장
           await prefs.setBool('auto_login', _autoLogin);
 

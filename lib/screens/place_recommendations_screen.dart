@@ -319,16 +319,12 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                       try {
                         final visitHistoryService = VisitHistoryService();
                         await visitHistoryService.addVisitHistory(
-                          VisitHistory(
-                            id: '', // 서비스에서 UUID로 대체됩니다
-                            placeName: place.name,
-                            placeId: place.id,
-                            category: place.category,
-                            latitude: place.latitude,
-                            longitude: place.longitude,
-                            address: place.address,
-                            visitDate: DateTime.now(),
-                          ),
+                            place.name,
+                            place.id,
+                            place.category,
+                            place.latitude,
+                            place.longitude,
+                            place.address
                         );
 
                         ScaffoldMessenger.of(context).showSnackBar(

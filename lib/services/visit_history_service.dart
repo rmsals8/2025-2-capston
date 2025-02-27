@@ -3,64 +3,96 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/visit_history.dart';
-
+import 'package:http/http.dart' as http;
+import 'dart:math' as Math;
 class VisitHistoryService {
   static const String _storageKey = 'visit_history';
   final Uuid _uuid = const Uuid();
+  final String baseUrl = 'http://10.0.2.2:8080/api/v1/visit-histories';
 
-  // 방문 기록 저장
-  Future<void> addVisitHistory(VisitHistory history) async {
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('access_token');
+  }
+  Future<void> addVisitHistory(String placeName, String placeId, String category,
+      double latitude, double longitude, String address) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final List<VisitHistory> histories = await getVisitHistories();
+      final token = prefs.getString('access_token');
 
-      // 이미 동일한 장소에 방문 기록이 있는지 확인
-      final existingIndex = histories.indexWhere((h) => h.placeId == history.placeId);
-
-      if (existingIndex >= 0) {
-        // 기존 기록 업데이트 (방문 횟수 증가)
-        final existing = histories[existingIndex];
-        histories[existingIndex] = existing.copyWith(
-          visitDate: history.visitDate,
-          visitCount: existing.visitCount + 1,
-        );
-      } else {
-        // 새 방문 기록 생성
-        final newHistory = history.copyWith(
-          id: _uuid.v4(),
-        );
-        histories.add(newHistory);
+      // 토큰이 있는지 확인 및 로그 출력
+      print('Access token found: ${token != null}');
+      if (token != null) {
+        print('Token length: ${token.length}');
+        print('Token preview: ${token.substring(0, Math.min(20, token.length))}...');
       }
 
-      // 날짜순으로 정렬
-      histories.sort((a, b) => b.visitDate.compareTo(a.visitDate));
+      if (token == null) {
+        throw Exception('로그인이 필요합니다');
+      }
 
-      // 저장
-      await prefs.setString(
-        _storageKey,
-        jsonEncode(histories.map((h) => h.toJson()).toList()),
+      // 요청 데이터 로깅
+      final data = {
+        'placeName': placeName,
+        'placeId': placeId,
+        'category': category,
+        'latitude': latitude,
+        'longitude': longitude,
+        'address': address
+      };
+
+      // Bearer 접두사 확인하여 중복 방지
+      final authHeader = 'Bearer ' + token.replaceAll('Bearer ', '');
+
+      final response = await http.post(
+        Uri.parse('${baseUrl}/add'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: json.encode(data),
       );
+
+      // 응답 코드와 본문 로깅
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode != 200) {
+        throw Exception('서버 오류: ${response.statusCode} - ${response.body}');
+      }
     } catch (e) {
-      print('방문 기록 저장 실패: $e');
-      rethrow;
+      print('Visit history error: $e');
+      throw Exception('Failed to add visit history: $e');
     }
   }
-
-  // 모든 방문 기록 조회
-  Future<List<VisitHistory>> getVisitHistories() async {
+  // 방문 기록 조회
+  Future<List<VisitHistory>> getVisitHistories({String? category}) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final String? jsonStr = prefs.getString(_storageKey);
-
-      if (jsonStr == null || jsonStr.isEmpty) {
-        return [];
+      final token = await _getToken();
+      if (token == null) {
+        throw Exception('Authentication required');
       }
 
-      final List<dynamic> jsonList = jsonDecode(jsonStr);
-      return jsonList.map((json) => VisitHistory.fromJson(json)).toList();
+      String url = baseUrl;
+      if (category != null && category.isNotEmpty) {
+        url += '?category=$category';
+      }
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token'
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonList = jsonDecode(response.body);
+        return jsonList.map((json) => VisitHistory.fromJson(json)).toList();
+      } else {
+        throw Exception('Failed to get visit histories: ${response.body}');
+      }
     } catch (e) {
-      print('방문 기록 조회 실패: $e');
-      return [];
+      throw Exception('Error getting visit histories: $e');
     }
   }
 
@@ -90,24 +122,77 @@ class VisitHistoryService {
     return histories.take(limit).toList();
   }
 
-  // 방문 기록 삭제
-  Future<void> deleteVisitHistory(String id) async {
+  // 카테고리별 통계 조회
+  Future<Map<String, int>> getCategoryStats() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final List<VisitHistory> histories = await getVisitHistories();
+      final token = await _getToken();
+      if (token == null) {
+        throw Exception('Authentication required');
+      }
 
-      histories.removeWhere((h) => h.id == id);
-
-      await prefs.setString(
-        _storageKey,
-        jsonEncode(histories.map((h) => h.toJson()).toList()),
+      final response = await http.get(
+        Uri.parse('$baseUrl/stats'),
+        headers: {
+          'Authorization': 'Bearer $token'
+        },
       );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> jsonMap = jsonDecode(response.body);
+        return jsonMap.map((key, value) => MapEntry(key, value as int));
+      } else {
+        throw Exception('Failed to get category stats: ${response.body}');
+      }
     } catch (e) {
-      print('방문 기록 삭제 실패: $e');
-      rethrow;
+      throw Exception('Error getting category stats: $e');
     }
   }
 
+  // 방문 기록 삭제
+  Future<void> deleteVisitHistory(String id) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        throw Exception('Authentication required');
+      }
+
+      final response = await http.delete(
+        Uri.parse('$baseUrl/$id'),
+        headers: {
+          'Authorization': 'Bearer $token'
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to delete visit history: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Error deleting visit history: $e');
+    }
+  }
+
+  // 모든 방문 기록 삭제
+  Future<void> deleteAllVisitHistories() async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        throw Exception('Authentication required');
+      }
+
+      final response = await http.delete(
+        Uri.parse(baseUrl),
+        headers: {
+          'Authorization': 'Bearer $token'
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to delete all visit histories: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Error deleting all visit histories: $e');
+    }
+  }
   // 모든 방문 기록 삭제
   Future<void> clearAllVisitHistories() async {
     try {
