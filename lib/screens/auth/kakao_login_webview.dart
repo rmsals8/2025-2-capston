@@ -110,8 +110,8 @@ class _KakaoLoginWebViewState extends State<KakaoLoginWebView> {
         // 카카오는 v1 없음
         tokenUrl = 'http://10.0.2.2:8080/api/oauth2/callback/kakao/token';
       } else {
-        // 네이버는 v1 있음
-        tokenUrl = 'http://10.0.2.2:8080/api/v1/oauth2/callback/naver/token';
+        // 네이버도 v1 없이 동일한 패턴으로 수정
+        tokenUrl = 'http://10.0.2.2:8080/api/oauth2/callback/naver/token';
       }
 
       print('토큰 요청 URL: $tokenUrl');

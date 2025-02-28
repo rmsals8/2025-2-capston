@@ -216,41 +216,82 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       print('토큰 길이: ${token?.length}');
       print('토큰 시작: ${token?.substring(0, Math.min(20, token?.length ?? 0))}');
 
-      if (token == null) {
+      if (token == null || token.isEmpty) {
         print('토큰이 없습니다.');
         return {'name': '사용자', 'email': 'user@example.com'};
       }
 
-      // Bearer 토큰 형식 확인
-      final authHeader = token.startsWith('Bearer ')
-          ? token
-          : 'Bearer $token';
+      // Bearer 토큰 형식 확인 및 수정
+      final authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
 
-      final response = await http.get(
-        Uri.parse('http://10.0.2.2:8080/api/v1/users/me'),
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': 'application/json',
-        },
-      );
+      print('API 요청에 사용되는 Authorization 헤더: ${authHeader.substring(0, Math.min(25, authHeader.length))}...');
 
-      print('사용자 정보 API 응답 상태 코드: ${response.statusCode}');
-      print('사용자 정보 API 응답 본문: ${response.body}');
+      try {
+        final response = await http.get(
+          Uri.parse('http://10.0.2.2:8080/api/v1/users/me'),
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+        );
 
-      if (response.statusCode == 200) {
-        final userData = json.decode(utf8.decode(response.bodyBytes));
+        print('사용자 정보 API 응답 상태 코드: ${response.statusCode}');
+        print('사용자 정보 API 응답 본문: ${response.body}');
+
+        if (response.statusCode == 200) {
+          final userData = json.decode(utf8.decode(response.bodyBytes));
+          return {
+            'name': userData['name'] ?? '사용자',
+            'email': userData['email'] ?? 'user@example.com'
+          };
+        } else if (response.statusCode == 401 || response.statusCode == 403) {
+          print('인증 오류: 토큰이 만료되었거나 유효하지 않습니다.');
+
+          // 토큰 만료 시 로컬에 저장된 사용자 정보 반환
+          final name = prefs.getString('user_name');
+          final email = prefs.getString('user_email');
+
+          print('로컬 저장소에서 가져온 사용자 정보: $name, $email');
+
+          // RefreshToken 처리 로직 추가할 수 있음
+
+          return {
+            'name': name ?? '사용자',
+            'email': email ?? 'user@example.com'
+          };
+        } else {
+          print('사용자 정보 조회 실패: ${response.body}');
+          return {'name': '사용자', 'email': 'user@example.com'};
+        }
+      } catch (e) {
+        print('HTTP 요청 오류: $e');
+        // 로컬에 저장된 사용자 정보 반환
+        final name = prefs.getString('user_name');
+        final email = prefs.getString('user_email');
+
         return {
-          'name': userData['name'] ?? '사용자',
-          'email': userData['email'] ?? 'user@example.com'
+          'name': name ?? '사용자',
+          'email': email ?? 'user@example.com'
         };
-      } else {
-        print('사용자 정보 조회 실패: ${response.body}');
-        return {'name': '사용자', 'email': 'user@example.com'};
       }
     } catch (e) {
       print('사용자 정보 API 호출 오류: $e');
       return {'name': '사용자', 'email': 'user@example.com'};
     }
+  }
+
+// 로컬 저장소에서 사용자 정보 가져오기
+  Future<Map<String, String>> _getUserInfoFromLocalPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userName = prefs.getString('user_name');
+    final userEmail = prefs.getString('user_email');
+
+    print('로컬 저장소에서 가져온 사용자 정보: $userName, $userEmail');
+
+    return {
+      'name': userName ?? '사용자',
+      'email': userEmail ?? 'user@example.com'
+    };
   }
   Future<String?> _getUserEmail() async {
     try {
