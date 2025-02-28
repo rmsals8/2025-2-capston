@@ -32,6 +32,26 @@ class AuthProvider with ChangeNotifier {
       // 임시로 토큰 저장
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('access_token', 'dummy_token');
+
+      // Also store user ID (in a real app, this would come from the server)
+      // For demonstration, we'll use the email as the user ID
+      await prefs.setString('user_id', email.split('@')[0]);
+
+      // Store user email
+      await prefs.setString('user_email', email);
+
+      // Extract and store user name from email
+      String nameFromEmail = email.split('@')[0];
+      nameFromEmail = nameFromEmail
+          .replaceAll('.', ' ')
+          .replaceAll('_', ' ')
+          .split(' ')
+          .map((word) => word.isNotEmpty
+          ? word[0].toUpperCase() + word.substring(1)
+          : '')
+          .join(' ');
+      await prefs.setString('user_name', nameFromEmail);
+
       if (rememberMe) {
         await prefs.setBool('remember_me', true);
       }
@@ -50,8 +70,14 @@ class AuthProvider with ChangeNotifier {
       _setLoading(true);
 
       final prefs = await SharedPreferences.getInstance();
+
+      // 모든 사용자 관련 정보 삭제
       await prefs.remove('access_token');
       await prefs.remove('refresh_token');
+      await prefs.remove('user_id');
+      await prefs.remove('user_name');
+      await prefs.remove('user_email');
+      await prefs.remove('remember_me');
 
       _isLoggedIn = false;
       notifyListeners();

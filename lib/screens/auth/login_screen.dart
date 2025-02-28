@@ -215,17 +215,72 @@ class _LoginScreenState extends State<LoginScreen> {
         if (response.statusCode == 200) {
           // 응답 파싱
           final authResponse = json.decode(response.body);
-
+          print('로그인 응답: $authResponse');
           // 토큰 저장 - Bearer 접두사 추가
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('access_token', authResponse['accessToken']);
           await prefs.setString('refresh_token', authResponse['refreshToken']);
 
-          // 토큰이 저장되었는지 확인하기 위한 디버그 출력
-          print('Tokens saved - Access Token: ${authResponse['accessToken']}');
-// 토큰이 저장되었는지 확인하기 위한 디버그 출력
-          print('Tokens saved - Access Token: ${authResponse['accessToken']}');
-          print('Verification check - Retrieved token: ${prefs.getString('access_token')}');
+          // 서버에서 받은 사용자 정보 저장
+          // 사용자 ID 저장
+          if (authResponse['user'] != null) {
+            // 사용자 정보가 user 객체 안에 있는 경우
+            await prefs.setString('user_name', authResponse['user']['name'] ?? '사용자');
+            await prefs.setString('user_email', authResponse['user']['email'] ?? 'user@example.com');
+          } else if (authResponse['name'] != null) {
+            // 사용자 정보가 최상위 객체에 있는 경우
+            await prefs.setString('user_name', authResponse['name'] ?? '사용자');
+            await prefs.setString('user_email', authResponse['email'] ?? 'user@example.com');
+          }
+
+          // 저장된 정보 확인
+          print('저장된 사용자 이름: ${prefs.getString('user_name')}');
+          print('저장된 사용자 이메일: ${prefs.getString('user_email')}');
+
+          // 자동 로그인 설정 저장
+          await prefs.setBool('auto_login', _autoLogin);
+
+          // 사용자 이메일 저장
+          if (authResponse['user'] != null && authResponse['user']['email'] != null) {
+            // 서버에서 받아온 이메일 사용
+            await prefs.setString('user_email', authResponse['user']['email']);
+          } else {
+            // 입력한 이메일 사용
+            await prefs.setString('user_email', _emailController.text);
+          }
+
+          // 사용자 이름 저장
+          if (authResponse['user'] != null && authResponse['user']['name'] != null) {
+            // 서버에서 받아온 이름 사용
+            await prefs.setString('user_name', authResponse['user']['name']);
+          } else if (authResponse['userName'] != null) {
+            await prefs.setString('user_name', authResponse['userName']);
+          } else {
+            // 이름 정보가 없는 경우: 이메일에서 이름 생성
+            String nameFromEmail = _emailController.text.split('@')[0];
+            nameFromEmail = nameFromEmail
+                .replaceAll('.', ' ')
+                .replaceAll('_', ' ')
+                .split(' ')
+                .map((word) => word.isNotEmpty
+                ? word[0].toUpperCase() + word.substring(1)
+                : '')
+                .join(' ');
+            await prefs.setString('user_name', nameFromEmail);
+          }
+
+          // 디버그 로그: 서버 응답 및 저장된 사용자 정보 출력
+          print('서버 응답 전체: $authResponse');
+          if (authResponse['user'] != null) {
+            print('서버에서 받은 사용자 정보: ${authResponse['user']}');
+          }
+
+          print('저장된 사용자 정보:');
+          print('- 액세스 토큰: ${prefs.getString('access_token')}');
+          print('- 사용자 ID: ${prefs.getString('user_id')}');
+          print('- 사용자 이름: ${prefs.getString('user_name')}');
+          print('- 사용자 이메일: ${prefs.getString('user_email')}');
+
           // 자동 로그인 설정 저장
           await prefs.setBool('auto_login', _autoLogin);
 

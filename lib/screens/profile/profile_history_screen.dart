@@ -1,7 +1,10 @@
 // lib/screens/profile/profile_history_screen.dart
+import 'dart:convert';
+import 'dart:math' as Math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/visit_history.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
@@ -10,7 +13,7 @@ import '../auth/auth_screen.dart';
 import '../recommendations/history_based_recommendations_screen.dart';
 import 'visit_history_screen.dart';
 import '../settings/settings_screen.dart';
-
+import 'package:http/http.dart' as http;
 class ProfileHistoryScreen extends StatefulWidget {
   const ProfileHistoryScreen({Key? key}) : super(key: key);
 
@@ -38,6 +41,21 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
     });
 
     try {
+      // 사용자 정보 조회 (백엔드에서) - 명시적으로 먼저 호출
+      Map<String, String> userInfo = await _fetchUserInfoFromBackend();
+
+      // 받아온 사용자 정보 출력하여 확인
+      print('백엔드에서 가져온 사용자 정보: $userInfo');
+
+      // SharedPreferences에 백엔드 정보 저장 (추가)
+      final prefs = await SharedPreferences.getInstance();
+      if (userInfo['name'] != null && userInfo['name']!.isNotEmpty) {
+        await prefs.setString('user_name', userInfo['name']!);
+      }
+      if (userInfo['email'] != null && userInfo['email']!.isNotEmpty) {
+        await prefs.setString('user_email', userInfo['email']!);
+      }
+
       // 최근 방문 기록 5개만 로드
       _recentHistories = await _historyService.getRecentlyVisitedPlaces(limit: 5);
 
@@ -58,7 +76,6 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -99,7 +116,6 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
   }
 
   Widget _buildProfileCard() {
-    // 사용자 정보 표시 (실제 구현에서는 AuthProvider에서 사용자 정보 가져옴)
     return Card(
       margin: const EdgeInsets.all(16),
       child: Padding(
@@ -120,19 +136,62 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '사용자',  // 실제 구현시 사용자 이름으로 변경
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  // 사용자 이름 표시 - FutureBuilder 대신 직접 백엔드 조회 사용
+                  FutureBuilder<Map<String, String>>(
+                      future: _fetchUserInfoFromBackend(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return Container(
+                            width: 120,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          );
+                        }
+
+                        final userData = snapshot.data;
+                        final userName = userData?['name'] ?? '사용자';
+                        print('백엔드에서 직접 가져온 사용자 이름: $userName');
+
+                        return Text(
+                          userName,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        );
+                      }
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    'user@example.com',  // 실제 구현시 사용자 이메일로 변경
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                    ),
+
+                  // 사용자 이메일 표시 - FutureBuilder 대신 직접 백엔드 조회 사용
+                  FutureBuilder<Map<String, String>>(
+                      future: _fetchUserInfoFromBackend(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return Container(
+                            width: 180,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          );
+                        }
+
+                        final userData = snapshot.data;
+                        final userEmail = userData?['email'] ?? 'user@example.com';
+                        print('백엔드에서 직접 가져온 사용자 이메일: $userEmail');
+
+                        return Text(
+                          userEmail,
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                          ),
+                        );
+                      }
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton(
@@ -147,7 +206,121 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       ),
     );
   }
+  Future<Map<String, String>> _fetchUserInfoFromBackend() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
 
+      // 토큰 상세 정보 출력
+      print('토큰 전체: $token');
+      print('토큰 길이: ${token?.length}');
+      print('토큰 시작: ${token?.substring(0, Math.min(20, token?.length ?? 0))}');
+
+      if (token == null) {
+        print('토큰이 없습니다.');
+        return {'name': '사용자', 'email': 'user@example.com'};
+      }
+
+      // Bearer 토큰 형식 확인
+      final authHeader = token.startsWith('Bearer ')
+          ? token
+          : 'Bearer $token';
+
+      final response = await http.get(
+        Uri.parse('http://10.0.2.2:8080/api/v1/users/me'),
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+      );
+
+      print('사용자 정보 API 응답 상태 코드: ${response.statusCode}');
+      print('사용자 정보 API 응답 본문: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final userData = json.decode(utf8.decode(response.bodyBytes));
+        return {
+          'name': userData['name'] ?? '사용자',
+          'email': userData['email'] ?? 'user@example.com'
+        };
+      } else {
+        print('사용자 정보 조회 실패: ${response.body}');
+        return {'name': '사용자', 'email': 'user@example.com'};
+      }
+    } catch (e) {
+      print('사용자 정보 API 호출 오류: $e');
+      return {'name': '사용자', 'email': 'user@example.com'};
+    }
+  }
+  Future<String?> _getUserEmail() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 저장된 사용자 이메일 가져오기
+      String? userEmail = prefs.getString('user_email');
+      print('SharedPreferences에서 가져온 사용자 이메일: $userEmail');
+
+      // 이메일이 없으면 기본값 반환
+      if (userEmail == null || userEmail.isEmpty) {
+        // 백엔드에서 정보 가져오기 시도
+        final userInfo = await _fetchUserInfoFromBackend();
+        return userInfo['email'];
+      }
+
+      return userEmail;
+    } catch (e) {
+      print('사용자 이메일 가져오기 오류: $e');
+      return 'user@example.com';
+    }
+  }
+  Future<String?> _getUserName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 저장된 사용자 이름 가져오기
+      String? userName = prefs.getString('user_name');
+      print('SharedPreferences에서 가져온 사용자 이름: $userName');
+
+      // 이름이 없으면 기본값 반환
+      if (userName == null || userName.isEmpty) {
+        // 백엔드에서 정보 가져오기 시도
+        final userInfo = await _fetchUserInfoFromBackend();
+        return userInfo['name'];
+      }
+
+      return userName;
+    } catch (e) {
+      print('사용자 이름 가져오기 오류: $e');
+      return '사용자';
+    }
+  }
+
+
+  Future<String?> _getUserId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Attempt to get user ID from preferences
+      String? userId = prefs.getString('user_id');
+
+      // If user ID is not available, try to extract from token
+      if (userId == null || userId.isEmpty) {
+        final token = prefs.getString('access_token');
+        if (token != null && token.isNotEmpty) {
+          // In a real app, you might extract user ID from JWT token
+          // Here we'll just use part of the token as a demo
+          if (token.length > 10) {
+            userId = 'user_${token.substring(0, 8)}';
+          }
+        }
+      }
+
+      return userId;
+    } catch (e) {
+      print('Error retrieving user ID: $e');
+      return null;
+    }
+  }
   Widget _buildStatisticsCard() {
     // 방문 통계
     final visitCount = _recentHistories.length;
@@ -421,10 +594,18 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
                   ),
                 );
               },
-              icon: const Icon(Icons.recommend),
-              label: const Text('맞춤 추천 장소'),
+              icon: const Icon(Icons.recommend, color: Colors.yellow), // 아이콘 색상 변경
+              label: const Text(
+                '맞춤 추천 장소',
+                style: TextStyle(
+                  color: Colors.yellow, // 텍스트 색상을 노란색으로 변경
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).primaryColor,
+                backgroundColor: Colors.purple, // 배경색은 보라색 유지
+                foregroundColor: Colors.yellow, // 전체 텍스트/아이콘 색상을 노란색으로 변경
               ),
             ),
           ),
@@ -449,7 +630,6 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       ),
     );
   }
-
   Future<void> _showLogoutDialog() async {
     return showDialog(
       context: context,

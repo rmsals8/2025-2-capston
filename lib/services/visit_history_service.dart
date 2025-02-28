@@ -14,13 +14,14 @@ class VisitHistoryService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('access_token');
   }
+  // 방문 기록 추가 함수에도 비슷한 디버깅 추가
   Future<void> addVisitHistory(String placeName, String placeId, String category,
       double latitude, double longitude, String address) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('access_token');
 
-      // 토큰이 있는지 확인 및 로그 출력
+      // 토큰 디버깅
       print('Access token found: ${token != null}');
       if (token != null) {
         print('Token length: ${token.length}');
@@ -41,8 +42,12 @@ class VisitHistoryService {
         'address': address
       };
 
+      print('방문 기록 추가 요청 데이터: $data');
+
       // Bearer 접두사 확인하여 중복 방지
-      final authHeader = 'Bearer ' + token.replaceAll('Bearer ', '');
+      final authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
+
+      print('방문 기록 추가 요청 헤더의 Authorization: $authHeader');
 
       final response = await http.post(
         Uri.parse('${baseUrl}/add'),
@@ -54,8 +59,8 @@ class VisitHistoryService {
       );
 
       // 응답 코드와 본문 로깅
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
+      print('방문 기록 추가 응답 상태 코드: ${response.statusCode}');
+      print('방문 기록 추가 응답 본문: ${response.body}');
 
       if (response.statusCode != 200) {
         throw Exception('서버 오류: ${response.statusCode} - ${response.body}');
@@ -69,21 +74,33 @@ class VisitHistoryService {
   Future<List<VisitHistory>> getVisitHistories({String? category}) async {
     try {
       final token = await _getToken();
+
+      // 토큰 디버깅
+      print('방문 기록 API 요청에 사용되는 토큰: $token');
+
       if (token == null) {
         throw Exception('Authentication required');
       }
+
+      // 토큰에 'Bearer ' 접두사 확인 및 추가
+      String authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
 
       String url = baseUrl;
       if (category != null && category.isNotEmpty) {
         url += '?category=$category';
       }
 
+      print('방문 기록 API 요청 URL: $url');
+
       final response = await http.get(
         Uri.parse(url),
         headers: {
-          'Authorization': 'Bearer $token'
+          'Authorization': authHeader
         },
       );
+
+      print('방문 기록 API 응답 상태 코드: ${response.statusCode}');
+      print('방문 기록 API 응답 본문: ${response.body}');
 
       if (response.statusCode == 200) {
         final List<dynamic> jsonList = jsonDecode(response.body);
@@ -92,9 +109,11 @@ class VisitHistoryService {
         throw Exception('Failed to get visit histories: ${response.body}');
       }
     } catch (e) {
+      print('방문 기록 가져오기 오류: $e');
       throw Exception('Error getting visit histories: $e');
     }
   }
+
 
   // 카테고리별 방문 기록 조회
   Future<List<VisitHistory>> getVisitHistoriesByCategory(String category) async {

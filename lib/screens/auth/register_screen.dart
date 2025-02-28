@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trip_helper/widgets/auth/custom_text_field.dart';
 import 'package:trip_helper/widgets/auth/timer_button.dart';
 import 'package:http/http.dart' as http;
@@ -333,11 +334,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
         if (response.statusCode == 200) {
           final authResponse = json.decode(response.body);
-          // 토큰 저장 처리
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const MainNavigation()),
-          );
+
+          // 사용자 정보 및 토큰 저장
+          final prefs = await SharedPreferences.getInstance();
+
+          // 토큰 저장
+          if (authResponse['accessToken'] != null) {
+            await prefs.setString('access_token', authResponse['accessToken']);
+          }
+          if (authResponse['refreshToken'] != null) {
+            await prefs.setString('refresh_token', authResponse['refreshToken']);
+          }
+
+          // 사용자 정보 저장
+          // 사용자 ID 저장
+          if (authResponse['userId'] != null) {
+            await prefs.setString('user_id', authResponse['userId'].toString());
+          } else if (authResponse['user'] != null && authResponse['user']['id'] != null) {
+            await prefs.setString('user_id', authResponse['user']['id'].toString());
+          }
+
+          // 사용자 이름 저장 - 입력한 이름 사용
+          await prefs.setString('user_name', _nameController.text);
+
+          // 사용자 이메일 저장 - 입력한 이메일 사용
+          await prefs.setString('user_email', _emailController.text);
+
+          // 디버그 로그
+          print('회원가입 성공! 저장된 사용자 정보:');
+          print('- 이름: ${prefs.getString('user_name')}');
+          print('- 이메일: ${prefs.getString('user_email')}');
+          print('- ID: ${prefs.getString('user_id')}');
+
+          // 메인 화면으로 이동
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const MainNavigation()),
+            );
+          }
         } else {
           throw Exception('회원가입 실패');
         }
