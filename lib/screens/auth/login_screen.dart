@@ -2,13 +2,23 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:trip_helper/widgets/auth/custom_text_field.dart';
-import 'package:trip_helper/widgets/auth/social_login_button.dart';
 import 'package:trip_helper/screens/main_navigation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:trip_helper/widgets/auth/kakao_image_button.dart';  // 새로운 import
+import '../../widgets/auth/modern_social_login_button.dart';
+import '../../widgets/auth/naver_image_button.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  // 콜백 함수 추가
+  final VoidCallback? onRegisterTap;
+  final VoidCallback? onPasswordResetTap;
+
+  const LoginScreen({
+    Key? key,
+    this.onRegisterTap,
+    this.onPasswordResetTap,
+  }) : super(key: key);
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -36,6 +46,36 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const SizedBox(height: 24),
+            // 앱 로고 및 제목 추가
+            const Center(
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.travel_explore,
+                    size: 64,
+                    color: Colors.blue,
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    '여행 도우미',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    '로그인',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
             _buildEmailField(),
             const SizedBox(height: 16),
@@ -146,8 +186,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildSocialLoginButtons() {
     return Column(
       children: [
-        SocialLoginButton(
-          type: SocialLoginType.kakao,
+        // 카카오 이미지 버튼 (기존 버튼 그대로 유지)
+        KakaoImageButton(
           onLoginSuccess: (code) {
             print('Kakao Login Success with code: $code');
           },
@@ -157,9 +197,9 @@ class _LoginScreenState extends State<LoginScreen> {
             );
           },
         ),
-        const SizedBox(height: 12),
-        SocialLoginButton(
-          type: SocialLoginType.naver,
+        const SizedBox(height: 8), // 버튼 사이 간격
+        // 네이버 로그인 버튼 추가
+        NaverImageButton(
           onLoginSuccess: (code) {
             print('Naver Login Success with code: $code');
           },
@@ -172,15 +212,12 @@ class _LoginScreenState extends State<LoginScreen> {
       ],
     );
   }
-
   Widget _buildBottomLinks() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         TextButton(
-          onPressed: () {
-            // TODO: 회원가입 페이지로 이동
-          },
+          onPressed: widget.onRegisterTap,
           child: const Text('회원가입'),
         ),
         Container(
@@ -190,9 +227,7 @@ class _LoginScreenState extends State<LoginScreen> {
           margin: const EdgeInsets.symmetric(horizontal: 8),
         ),
         TextButton(
-          onPressed: () {
-            // TODO: 비밀번호 찾기 페이지로 이동
-          },
+          onPressed: widget.onPasswordResetTap,
           child: const Text('비밀번호 찾기'),
         ),
       ],

@@ -5,7 +5,7 @@ import 'package:trip_helper/providers/schedule_provider.dart';
 import 'package:trip_helper/models/schedule.dart';
 import 'package:trip_helper/screens/route/route_list_screen.dart';
 import 'package:trip_helper/providers/route_provider.dart';
-
+import 'dart:math';
 class OptimizedScheduleScreen extends StatefulWidget {
   final Map<String, dynamic> optimizedData;
 
@@ -160,6 +160,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
                         color: isFlexible ? Colors.blue : Colors.black,
                       ),
                     ),
+                    // _buildScheduleList 메소드의 ListTile 부분에서
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -167,7 +168,8 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
                           Padding(
                             padding: const EdgeInsets.only(top: 4.0, bottom: 4.0),
                             child: Text(
-                              '주소: $address',
+                              // 긴 JSON 형식 주소를 사용자 친화적으로 표시
+                              '주소: ${_formatAddress(address)}',
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
@@ -213,7 +215,47 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
       ],
     );
   }
+// 주소 형식 간소화 메소드
+  String _formatAddress(String address) {
+    // JSON 형식으로 보이는 주소 처리
+    if (address.startsWith('{') && address.contains(':')) {
+      try {
+        // JSON 파싱 시도
+        Map<String, dynamic> addressObj = json.decode(address);
 
+        // 주요 필드 추출
+        List<String> components = [];
+
+        // name이 있으면 우선 사용
+        if (addressObj.containsKey('name') && addressObj['name'] != null) {
+          components.add(addressObj['name'].toString());
+        }
+
+        // address가 있으면 추가
+        if (addressObj.containsKey('address') && addressObj['address'] != null) {
+          components.add(addressObj['address'].toString());
+        } else if (addressObj.containsKey('formatted_address') && addressObj['formatted_address'] != null) {
+          components.add(addressObj['formatted_address'].toString());
+        }
+
+        if (components.isNotEmpty) {
+          return components.join(', ');
+        }
+
+        // 파싱은 됐지만 주요 필드가 없는 경우, 모든 문자열 값 사용
+        return addressObj.entries
+            .where((e) => e.value is String && e.value.toString().isNotEmpty)
+            .map((e) => e.value.toString())
+            .join(', ');
+      } catch (e) {
+        // 파싱 실패 시 원본 텍스트 반환 (단, 길이 제한)
+        return address.length > 50 ? address.substring(0, 50) + "..." : address;
+      }
+    }
+
+    // 일반 텍스트 주소는 그대로 반환
+    return address;
+  }
   // 대안 미리보기 위젯
   Widget _buildAlternativesPreview(String scheduleId, List<dynamic> options) {
     if (options.isEmpty) return const SizedBox.shrink();
@@ -423,6 +465,9 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
   }
 
 // 장소 위치에서 이름만 추출
+// lib/screens/schedule/optimized_schedule_screen.dart 파일에서
+
+// 장소 위치에서 이름만 추출 - 수정된 버전
   String _extractPlaceName(dynamic location) {
     if (location == null) return '';
 
@@ -432,38 +477,73 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
       if (location.startsWith('{') && location.endsWith('}')) {
         try {
           final Map<String, dynamic> locationObj = json.decode(location);
-          return locationObj['name'] ?? '';
+
+          // name 필드가 있으면 반환
+          if (locationObj.containsKey('name')) {
+            return locationObj['name'].toString();
+          }
+
+          // address 필드가 있으면 반환
+          if (locationObj.containsKey('address')) {
+            return locationObj['address'].toString();
+          }
+
+          // 주소 형식으로 보이는 필드 찾기
+          for (var key in ['formatted_address', 'locationString', 'street']) {
+            if (locationObj.containsKey(key)) {
+              return locationObj[key].toString();
+            }
+          }
+
+          // 모든 필드를 간략화된 형식으로 보여주기
+          return locationObj.entries
+              .where((entry) => entry.value != null && entry.value.toString().isNotEmpty)
+              .map((entry) => "${entry.key}: ${entry.value}")
+              .join(', ')
+              .substring(0, min(100, locationObj.toString().length)) +
+              (locationObj.toString().length > 100 ? "..." : "");
         } catch (e) {
-          return location;
+          // JSON 파싱 실패하면 원본 반환 (하지만 길이 제한)
+          return location.length > 50 ? location.substring(0, 50) + "..." : location;
         }
       }
 
       // 주소에서 장소명 추출 시도
-      final nameParts = location.split(' ');
-      if (nameParts.length > 1) {
-        // 마지막 부분이 "점" 또는 "호점"으로 끝나면 해당 부분 반환
-        for (int i = nameParts.length - 1; i >= 0; i--) {
-          if (nameParts[i].contains('점') || nameParts[i].contains('마트') ||
-              nameParts[i].contains('GS') || nameParts[i].contains('CU')) {
-            return nameParts.sublist(i).join(' ');
-          }
-        }
+      final nameParts = location.split(',');
+      if (nameParts.length > 0) {
+        // 쉼표로 구분된 경우 첫 번째 부분만 사용
+        return nameParts[0].trim();
       }
 
-      // 주소의 마지막 부분을 장소명으로 사용
-      if (nameParts.length > 2) {
-        return nameParts.sublist(nameParts.length - 2).join(' ');
-      }
-
-      return location; // 이름 추출 실패시 전체 반환
+      return location.length > 50 ? location.substring(0, 50) + "..." : location;
     }
 
     // Map인 경우 (이미 파싱된 경우)
     if (location is Map) {
-      return location['name'] ?? '';
+      if (location.containsKey('name')) {
+        return location['name'].toString();
+      }
+      if (location.containsKey('address')) {
+        return location['address'].toString();
+      }
+      if (location.containsKey('locationString')) {
+        return location['locationString'].toString();
+      }
+
+      // 객체 전체를 표시하지 않고, 핵심 정보만 추출
+      List<String> keyInfo = [];
+      ['name', 'address', 'street', 'city', 'region'].forEach((key) {
+        if (location.containsKey(key) && location[key] != null) {
+          keyInfo.add(location[key].toString());
+        }
+      });
+
+      if (keyInfo.isNotEmpty) {
+        return keyInfo.join(', ');
+      }
     }
 
-    return ''; // 기타 경우
+    return '';
   }
 // 유틸리티 함수 - 다양한 형태의 위치 데이터에서 좌표 추출
   Map<String, double> extractCoordinates(dynamic locationData) {

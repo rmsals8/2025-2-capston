@@ -5,7 +5,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:trip_helper/screens/home/home_screen.dart';
 import 'package:trip_helper/screens/route/route_generation_screen.dart';
 import 'package:trip_helper/screens/profile/profile_history_screen.dart';
-import 'package:trip_helper/screens/navigation/navigation_screen.dart';
 import 'package:trip_helper/providers/location_provider.dart';
 import 'package:trip_helper/providers/navigation_provider.dart';
 import 'package:trip_helper/providers/auth_provider.dart';
@@ -67,15 +66,6 @@ class _MainNavigationState extends State<MainNavigation> {
           children: [
             const HomeScreen(),
             const RouteGenerationScreen(),
-            Consumer<LocationProvider>(
-              builder: (context, locationProvider, child) {
-                return NavigationScreen(
-                  startLocation: locationProvider.currentLocation ?? defaultLocation,
-                  endLocation: defaultLocation, // 실제로는 사용자의 목적지로 설정 필요
-                  transportMode: 'DRIVING', // 기본값
-                );
-              },
-            ),
             const ProfileHistoryScreen(),
           ],
           onPageChanged: (index) {
@@ -98,10 +88,6 @@ class _MainNavigationState extends State<MainNavigation> {
             BottomNavigationBarItem(
               icon: Icon(Icons.map),
               label: '경로',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.navigation),
-              label: '내비게이션',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person),
