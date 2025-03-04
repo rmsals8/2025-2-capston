@@ -36,7 +36,7 @@ dependencies:
   shimmer: ^3.0.0  # 로딩 효과
   flutter_svg: ^2.0.9
   webview_flutter: ^4.0.0  # 추가
-
+  google_speech: ^2.2.0
 
   # 상태 관리
   provider: ^6.1.1
