@@ -7,7 +7,7 @@ import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-
+import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
 // 대중교통 정보를 저장할 클래스
 class TransitDetails {
   final String line;
@@ -63,7 +63,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
   List<TransitDetails> _transitDetails = []; // 대중교통 세부 정보
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStreamSubscription;
-
+  String get apiKey => dotenv.dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
   bool _isLoading = true;
   String? _errorMessage;
   String _transportMode = ''; // 추가된 변수
@@ -463,7 +463,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
     if (_isRouteInitialized && transportMode == null) return;
 
     try {
-      const apiKey = 'AIzaSyA036NtD7ALG40jOnqSGks2QsI1nAG9cGI';
+      // const apiKey = 'AIzaSyA036NtD7ALG40jOnqSGks2QsI1nAG9cGI';
 
       // 이동 수단 설정
       if (transportMode != null) {

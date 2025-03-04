@@ -6,9 +6,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/recommended_place.dart';
 import '../models/visit_history.dart';
 import 'visit_history_service.dart';
-
+import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
 class PlaceRecommendationService {
-  final String? foursquareApiKey = "fsq3VpVQLn5hZptfpIHLogZHRb7vAbteiSkiUlZT4QvpC8U=";
+  String? get foursquareApiKey => dotenv.dotenv.env['FOURSQUARE_API_KEY'];
   final VisitHistoryService _historyService = VisitHistoryService();
 
   // 경로 주변 장소 추천

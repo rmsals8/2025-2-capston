@@ -18,11 +18,11 @@ import 'providers/navigation_provider.dart';
 import 'services/navigation_service.dart';
 import 'services/visit_history_service.dart';  // 추가: 방문 기록 서비스
 import 'services/place_recommendation_service.dart';  // 추가: 장소 추천 서비스
-
+import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
 Future<void> initializeApp() async {
   // Flutter 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
-
+  await dotenv.dotenv.load(fileName: ".env");
 
   // Google Maps 렌더러 초기화
   final GoogleMapsFlutterPlatform mapsImplementation = GoogleMapsFlutterPlatform.instance;

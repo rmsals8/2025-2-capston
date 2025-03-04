@@ -13,6 +13,7 @@ import 'package:trip_helper/models/route_analysis.dart';
 import 'package:trip_helper/models/route_segment.dart';
 import '../models/route.dart';
 import 'dart:ui' as ui;
+import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
 
 class RouteProvider with ChangeNotifier {
   List<route_model.Route> _routes = [];
@@ -22,7 +23,7 @@ class RouteProvider with ChangeNotifier {
   List<route_model.Route> get routes => _routes;
   bool _isLoading = false;
   String? _error;
-
+  String get apiKey => dotenv.dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -627,7 +628,7 @@ class RouteProvider with ChangeNotifier {
       print('원본 출발지: $startLat, $startLng → 변환: $normalizedStartLat, $normalizedStartLng');
       print('원본 도착지: $endLat, $endLng → 변환: $normalizedEndLat, $normalizedEndLng');
 
-      final String apiKey = 'AIzaSyA036NtD7ALG40jOnqSGks2QsI1nAG9cGI';
+      // final String apiKey = 'AIzaSyA036NtD7ALG40jOnqSGks2QsI1nAG9cGI';
       final String mode = _getGoogleApiMode(transportMode);
 
       // 요청 URL 구성 - 정규화된 좌표 사용

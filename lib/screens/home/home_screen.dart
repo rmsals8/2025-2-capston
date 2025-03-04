@@ -24,7 +24,7 @@ import '../route/route_generation_screen.dart';
 import '../recommendations/history_based_recommendations_screen.dart';
 import '../profile/visit_history_screen.dart';
 import '../place_recommendations_screen.dart';
-
+import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
@@ -44,8 +44,8 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription? _recognitionSubscription;
 
   // GPT API 키 (실제 사용 시 보안 처리 필요)
-  final String _openAIKey = "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";
-  final String _googleMapsApiKey = "AIzaSyA036NtD7ALG40jOnqSGks2QsI1nAG9cGI";
+  String get _openAIKey => dotenv.dotenv.env['OPENAI_API_KEY'] ?? '';
+  String get _googleMapsApiKey => dotenv.dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
 
   // 음성 인식 결과를 저장할 변수
   String _lastRecognizedText = "";
