@@ -18,11 +18,11 @@ import 'providers/navigation_provider.dart';
 import 'services/navigation_service.dart';
 import 'services/visit_history_service.dart';  // 추가: 방문 기록 서비스
 import 'services/place_recommendation_service.dart';  // 추가: 장소 추천 서비스
-import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
+
 Future<void> initializeApp() async {
   // Flutter 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.dotenv.load(fileName: ".env");
+  await dotenv.load(fileName: ".env");
 
   // Google Maps 렌더러 초기화
   final GoogleMapsFlutterPlatform mapsImplementation = GoogleMapsFlutterPlatform.instance;
@@ -35,11 +35,11 @@ Future<void> initializeApp() async {
   // Firebase 초기화 - 한 번만 실행되도록 수정
   if (Firebase.apps.isEmpty) {
     await Firebase.initializeApp(
-      options: const FirebaseOptions(
-        apiKey: "AIzaSyBcLQ2iyc7b46fQ1aJ6h5S-1NP-nj_uFEQ",
-        appId: "1:769182070071:android:618adb2812fb60eb1e16b2",
-        messagingSenderId: "769182070071",
-        projectId: "capston-design-7344b",
+      options: FirebaseOptions(
+        apiKey: dotenv.env['FIREBASE_API_KEY'] ?? '',
+        appId: dotenv.env['FIREBASE_APP_ID'] ?? '',
+        messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID'] ?? '',
+        projectId: dotenv.env['FIREBASE_PROJECT_ID'] ?? '',
       ),
     );
   }
