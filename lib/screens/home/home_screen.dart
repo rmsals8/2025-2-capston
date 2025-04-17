@@ -10,7 +10,6 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'package:google_speech/google_speech.dart' as google_speech;
 import 'package:path_provider/path_provider.dart';
 
 import '../../providers/location_provider.dart';
@@ -38,19 +37,15 @@ class _HomeScreenState extends State<HomeScreen> {
   final VisitHistoryService _historyService = VisitHistoryService();
   final PlaceRecommendationService _recommendationService = PlaceRecommendationService();
 
-  // Google Speech API 관련 변수 추가
-  bool _isRecording = false;
-  StreamController<List<int>>? _audioStreamController;
-  StreamSubscription? _recognitionSubscription;
-
   // GPT API 키 (실제 사용 시 보안 처리 필요)
   String get _openAIKey => dotenv.dotenv.env['OPENAI_API_KEY'] ?? '';
   String get _googleMapsApiKey => dotenv.dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
 
-  // 음성 인식 결과를 저장할 변수
+  // 음성 인식 변수 교체
+  bool _speechEnabled = false;
+  bool _isListening = false;
   String _lastRecognizedText = "";
 
-  bool _isListening = false;
   bool _isLoading = true;
   int _currentCarouselIndex = 0;
 
@@ -64,6 +59,66 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _initializeServices();
     _loadData();
+    _initSpeech();
+  }
+
+  // 새로운 음성 인식 초기화 메소드
+  void _initSpeech() async {
+    _speechEnabled = await _speechToText.initialize(
+      onStatus: (status) {
+        if (status == 'done' || status == 'notListening') {
+          setState(() => _isListening = false);
+        }
+      },
+      onError: (error) {
+        setState(() => _isListening = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('음성 인식 오류: ${error.errorMsg}')),
+        );
+      },
+    );
+    setState(() {});
+  }
+
+  // 새로운 음성 인식 시작 메소드
+  void _startListening() async {
+    if (!_speechEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('음성 인식이 지원되지 않는 기기입니다.')),
+      );
+      return;
+    }
+    setState(() => _isListening = true);
+    await _speechToText.listen(
+      onResult: (result) {
+        setState(() {
+          _lastRecognizedText = result.recognizedWords;
+          _searchController.text = _lastRecognizedText;
+        });
+      },
+      localeId: 'ko_KR', // 한국어
+    );
+
+    // 사용자에게 듣고 있다는 피드백 제공
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.mic, color: Colors.white),
+            SizedBox(width: 8),
+            Text('듣고 있습니다...'),
+          ],
+        ),
+        duration: Duration(seconds: 1),
+        backgroundColor: Colors.blue,
+      ),
+    );
+  }
+
+  // 새로운 음성 인식 중지 메소드
+  void _stopListening() async {
+    await _speechToText.stop();
+    setState(() => _isListening = false);
   }
 
   // 음성으로 인식된 일정 처리 메소드 추가
@@ -542,191 +597,6 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
     };
   }
 
-  // 오디오 녹음 및 인식 시작
-  void _startRecording(google_speech.SpeechToText speechToText, google_speech.RecognitionConfig config) {
-    _isRecording = true;
-    _audioStreamController = StreamController<List<int>>();
-
-    // 오디오 스트림 (실제 구현에서는 마이크 데이터로 교체 필요)
-    Future.delayed(Duration.zero, () async {
-      try {
-        // 예시 데이터 - 실제로는 마이크 데이터를 스트리밍해야 함
-        while (_isRecording) {
-          // 더미 오디오 데이터 (실제로는 마이크 데이터 필요)
-          List<int> dummyData = List.generate(1600, (index) => 0);
-          if (_audioStreamController?.isClosed == false) {
-            _audioStreamController?.add(dummyData);
-          }
-          await Future.delayed(Duration(milliseconds: 100));
-        }
-      } catch (e) {
-        print('Audio recording error: $e');
-      } finally {
-        _audioStreamController?.close();
-      }
-    });
-
-    // Google Speech API로 인식 시작
-    final responseStream = speechToText.streamingRecognize(
-      google_speech.StreamingRecognitionConfig(
-        config: config,
-        interimResults: true,
-      ),
-      _audioStreamController!.stream,
-    );
-
-    // 결과 처리
-    _recognitionSubscription = responseStream.listen((response) {
-      // 간단한 로그
-      print('Google Speech response: $response');
-
-      final results = response.results;
-      if (results.isNotEmpty) {
-        // 인식 결과 텍스트 추출
-        final result = results.first;
-        final alternatives = result.alternatives;
-        if (alternatives.isNotEmpty) {
-          final transcript = alternatives.first.transcript;
-
-          print('Recognition result: $transcript'); // 영어 로그
-          print('인식 결과: $transcript'); // 한글 로그
-
-          // 텍스트 필드에 결과 표시
-          setState(() {
-            _searchController.text = transcript;
-            _lastRecognizedText = transcript;
-          });
-
-          // 최종 결과인 경우
-          if (result.isFinal) {
-            print('Final result received: $transcript'); // 영어 로그
-            print('최종 결과 수신됨: $transcript'); // 한글 로그
-
-            setState(() => _isListening = false);
-            _stopRecording();
-          }
-        }
-      }
-    }, onDone: () {
-      setState(() => _isListening = false);
-      _stopRecording();
-      print('Speech recognition completed'); // 영어 로그
-      print('음성 인식 완료'); // 한글 로그
-    }, onError: (error) {
-      setState(() => _isListening = false);
-      _stopRecording();
-      print('Speech recognition error: $error'); // 영어 로그
-      print('음성 인식 오류: $error'); // 한글 로그
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('음성 인식 오류: $error')),
-      );
-    }) as StreamSubscription;
-  }
-
-
-  // 녹음 중지
-  void _stopRecording() {
-    _isRecording = false;
-    _audioStreamController?.close();
-    _recognitionSubscription?.cancel();
-  }
-  // Google Speech API를 사용한 음성 인식 시작
-  Future<void> _startListening() async {
-    print('Starting voice recognition...'); // 영어 로그
-    print('음성 인식 시작...'); // 한글 로그
-
-    if (_isListening) {
-      // 이미 듣고 있으면 중지
-      setState(() => _isListening = false);
-      _stopRecording();
-      print('Speech recognition stopped'); // 영어 로그
-      print('음성 인식 중지됨'); // 한글 로그
-      return;
-    }
-
-    // 마이크 권한 요청
-    var micStatus = await Permission.microphone.request();
-    print('Current microphone permission status: $micStatus'); // 권한 상태 로그
-
-    if (micStatus != PermissionStatus.granted) {
-      print('Microphone permission denied'); // 영어 로그
-      print('마이크 권한 거부됨'); // 한글 로그
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('마이크 권한이 필요합니다')),
-      );
-      return;
-    }
-
-    try {
-      setState(() => _isListening = true);
-      print('Listening state set to true'); // 상태 변경 로그
-
-      // 사용자에게 듣고 있다는 피드백 제공
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.mic, color: Colors.white),
-              SizedBox(width: 8),
-              Text('듣고 있습니다...'),
-            ],
-          ),
-          duration: Duration(seconds: 1),
-          backgroundColor: Colors.blue,
-        ),
-      );
-
-      try {
-        print('Attempting to load Google service account...'); // 서비스 계정 로드 시작 로그
-
-        // Google Cloud 서비스 계정 JSON 로드
-        final serviceAccount = await rootBundle.loadString(
-            'assets/adroit-booth-435400-b4-85e08d09b5d4.json');
-
-        print('Service account loaded successfully, length: ${serviceAccount.length}'); // 로드 성공 로그
-
-        // Speech 클라이언트 생성
-        print('Creating Speech-to-Text client...'); // 클라이언트 생성 로그
-        final speechToText = google_speech.SpeechToText.viaServiceAccount(
-            google_speech.ServiceAccount.fromString(serviceAccount));
-
-        print('Speech-to-Text client created successfully'); // 생성 성공 로그
-
-        // 인식 구성 설정
-        print('Configuring recognition settings for Korean language...'); // 설정 로그
-        final config = google_speech.RecognitionConfig(
-          encoding: google_speech.AudioEncoding.LINEAR16,
-          model: google_speech.RecognitionModel.command_and_search,
-          enableAutomaticPunctuation: true,
-          sampleRateHertz: 16000,
-          languageCode: 'ko-KR', // 한국어 설정
-        );
-
-        print('Recognition config created, starting audio stream...'); // 오디오 스트림 시작 로그
-
-        // 오디오 스트림 및 인식 시작
-        _startRecording(speechToText, config);
-
-      } catch (e) {
-        print('Error loading service account: $e'); // 영어 로그
-        print('서비스 계정 로드 오류 상세: ${e.toString()}'); // 상세 오류 로그
-
-        setState(() => _isListening = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('음성 인식을 시작할 수 없습니다: $e')),
-        );
-      }
-    } catch (e) {
-      setState(() => _isListening = false);
-      print('Error starting speech recognition: $e'); // 영어 로그
-      print('음성 인식 시작 오류 상세: ${e.toString()}'); // 상세 오류 로그
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('음성 인식을 시작할 수 없습니다: $e')),
-      );
-    }
-  }
   Future<void> _initializeServices() async {
     print('Initializing services...'); // 영어 로그
     print('서비스 초기화 중...'); // 한글 로그
@@ -735,20 +605,6 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
     var micStatus = await Permission.microphone.request();
     print('Microphone permission status: $micStatus'); // 영어 로그
     print('마이크 권한 상태: $micStatus'); // 한글 로그
-
-    bool speechInitialized = await _speechToText.initialize(
-      onStatus: (status) {
-        print('Speech recognition status: $status'); // 영어 로그
-        print('음성 인식 상태: $status'); // 한글 로그
-      },
-      onError: (errorNotification) {
-        print('Speech recognition error: $errorNotification'); // 영어 로그
-        print('음성 인식 오류: $errorNotification'); // 한글 로그
-      },
-    );
-
-    print('Speech to text initialized: $speechInitialized'); // 영어 로그
-    print('음성 인식 초기화 상태: $speechInitialized'); // 한글 로그
 
     // 위치 권한 요청
     var locationStatus = await Permission.location.request();
@@ -786,7 +642,7 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
         categoryCounts[history.category] = (categoryCounts[history.category] ?? 0) + 1;
       }
 
-      // 상위 인기 카테고리 추출 (내림차순 정렬)
+// 상위 인기 카테고리 추출 (내림차순 정렬)
       List<MapEntry<String, int>> sortedCategories = categoryCounts.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
 
@@ -932,7 +788,7 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
           Row(
             children: [
               GestureDetector(
-                onTap: _startListening,
+                onTap: _isListening ? _stopListening : _startListening,
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
@@ -1529,99 +1385,11 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
     } else {
       return '${date.year}.${date.month}.${date.day}';
     }
+  }
 
-// Google Speech API를 사용한 음성 인식 시작
-    Future<void> _startListening() async {
-      print('Starting voice recognition...'); // 영어 로그
-      print('음성 인식 시작...'); // 한글 로그
-
-      if (_isListening) {
-        // 이미 듣고 있으면 중지
-        setState(() => _isListening = false);
-        _stopRecording();
-        print('Speech recognition stopped'); // 영어 로그
-        print('음성 인식 중지됨'); // 한글 로그
-        return;
-      }
-
-      // 마이크 권한 요청
-      var micStatus = await Permission.microphone.request();
-      if (micStatus != PermissionStatus.granted) {
-        print('Microphone permission denied'); // 영어 로그
-        print('마이크 권한 거부됨'); // 한글 로그
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('마이크 권한이 필요합니다')),
-        );
-        return;
-      }
-
-      try {
-        setState(() => _isListening = true);
-
-        // 사용자에게 듣고 있다는 피드백 제공
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.mic, color: Colors.white),
-                SizedBox(width: 8),
-                Text('듣고 있습니다...'),
-              ],
-            ),
-            duration: Duration(seconds: 1),
-            backgroundColor: Colors.blue,
-          ),
-        );
-
-        try {
-          // Google Cloud 서비스 계정 JSON 로드
-          final serviceAccount = await rootBundle.loadString(
-              'assets/adroit-booth-435400-b4-85e08d09b5d4.json');
-
-          // Speech 클라이언트 생성
-          final speechToText = google_speech.SpeechToText.viaServiceAccount(
-              google_speech.ServiceAccount.fromString(serviceAccount));
-
-          // 인식 구성 설정
-          final config = google_speech.RecognitionConfig(
-            encoding: google_speech.AudioEncoding.LINEAR16,
-            model: google_speech.RecognitionModel.command_and_search,
-            enableAutomaticPunctuation: true,
-            sampleRateHertz: 16000,
-            languageCode: 'ko-KR', // 한국어 설정
-          );
-
-          // 오디오 스트림 및 인식 시작
-          _startRecording(speechToText, config);
-
-        } catch (e) {
-          print('Error loading service account: $e'); // 영어 로그
-          print('서비스 계정 로드 오류: $e'); // 한글 로그
-
-          setState(() => _isListening = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('음성 인식을 시작할 수 없습니다: $e')),
-          );
-        }
-      } catch (e) {
-        setState(() => _isListening = false);
-        print('Error starting speech recognition: $e'); // 영어 로그
-        print('음성 인식 시작 오류: $e'); // 한글 로그
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('음성 인식을 시작할 수 없습니다: $e')),
-        );
-      }
-    }
-
-
-
-
-
-    @override
-    void dispose() {
-      _recognitionSubscription?.cancel();
-      _stopRecording();
-      super.dispose();
-    }
-  }}
+  @override
+  void dispose() {
+    _speechToText.stop();
+    super.dispose();
+  }
+}
