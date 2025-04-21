@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "769182070071",
+    "project_id": "capston-design-7344b",
+    "storage_bucket": "capston-design-7344b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:769182070071:android:650a5637cec5e1881e16b2",
+        "android_client_info": {
+          "package_name": "com.example.firebase_authenticaion"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDn0Z8XSbyTATK96NerXP3I7WIcoMeybCk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:769182070071:android:618adb2812fb60eb1e16b2",
+        "android_client_info": {
+          "package_name": "com.example.trip_helper"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDn0Z8XSbyTATK96NerXP3I7WIcoMeybCk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
