@@ -30,7 +30,7 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 1, vsync: this); // 초기값으로 1개 탭
+    _tabController = TabController(length: 1, vsync: this);
     _loadData();
     _loadCategoryStats();
   }
@@ -48,20 +48,16 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     });
 
     try {
-      // 방문 기록 불러오기
       _histories = await _historyService.getVisitHistories(
           category: _selectedCategory
       );
 
-      // 카테고리별 분류 및 통계 계산
       _categoryCounts = {};
       _categorizedHistories = {'전체': _histories};
 
       for (var history in _histories) {
-        // 카테고리 카운트 증가
         _categoryCounts[history.category] = (_categoryCounts[history.category] ?? 0) + 1;
 
-        // 카테고리별 리스트에 추가
         if (_categorizedHistories.containsKey(history.category)) {
           _categorizedHistories[history.category]!.add(history);
         } else {
@@ -69,14 +65,12 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
         }
       }
 
-      // 카테고리 목록 업데이트 (방문 횟수 많은 순으로 정렬)
       _categories = ['전체'];
       List<MapEntry<String, int>> sortedCategories = _categoryCounts.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
 
       _categories.addAll(sortedCategories.map((e) => e.key));
 
-      // 탭 컨트롤러 재생성
       _tabController.dispose();
       _tabController = TabController(length: _categories.length, vsync: this);
 
@@ -105,19 +99,35 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('방문 기록'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        toolbarHeight: 80,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          '방문 기록',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: Colors.black),
             onPressed: _loadData,
           ),
           IconButton(
-            icon: const Icon(Icons.recommend),
+            icon: const Icon(Icons.recommend, color: Colors.black),
             onPressed: _navigateToRecommendations,
             tooltip: '맞춤 추천',
           ),
           PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.black),
             onSelected: (value) {
               if (value == 'clear') {
                 _showClearHistoryDialog();
@@ -134,13 +144,18 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
         bottom: _isLoading || _errorMessage != null ? null : TabBar(
           controller: _tabController,
           isScrollable: true,
+          indicatorColor: Colors.black,
+          labelColor: Colors.black,
+          unselectedLabelColor: Colors.grey[600],
+          labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal),
           tabs: _categories.map((category) => Tab(
             text: '$category${category != '전체' ? ' (${_categoryCounts[category]})' : ''}',
           )).toList(),
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Colors.black))
           : _errorMessage != null
           ? _buildErrorView()
           : _histories.isEmpty
@@ -153,7 +168,8 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showClearHistoryDialog,
-        child: const Icon(Icons.delete),
+        backgroundColor: Colors.black,
+        child: const Icon(Icons.delete, color: Colors.white),
         tooltip: '기록 삭제',
       ),
     );
@@ -170,6 +186,13 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: _loadData,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
             child: const Text('다시 시도'),
           ),
         ],
@@ -182,27 +205,37 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
+          Icon(
             Icons.history,
             size: 64,
-            color: Colors.grey,
+            color: Colors.grey[300],
           ),
           const SizedBox(height: 16),
           const Text(
             '방문 기록이 없습니다',
-            style: TextStyle(fontSize: 18),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             '장소를 방문하면 여기에 표시됩니다',
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(color: Colors.grey[600]),
           ),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: () {
-              // 추천 화면으로 이동
               _navigateToRecommendations();
             },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
             child: const Text('장소 추천 보기'),
           ),
         ],
@@ -211,14 +244,13 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
   }
 
   Widget _buildHistoryList(List<VisitHistory> histories) {
-    // 날짜별로 정렬 (최신순)
     histories.sort((a, b) => b.visitDate.compareTo(a.visitDate));
 
     return histories.isEmpty
         ? Center(
       child: Text(
         '${_tabController.index > 0 ? _categories[_tabController.index] : ''} 카테고리의 방문 기록이 없습니다',
-        style: const TextStyle(color: Colors.grey),
+        style: TextStyle(color: Colors.grey[600]),
       ),
     )
         : ListView.builder(
@@ -226,24 +258,32 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
       itemCount: histories.length,
       itemBuilder: (context, index) {
         final history = histories[index];
-        return Card(
+        return Container(
           margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[200]!),
           ),
           child: ListTile(
             contentPadding: const EdgeInsets.all(16),
-            leading: CircleAvatar(
-              backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
+            leading: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Icon(
                 _getCategoryIcon(history.category),
-                color: Theme.of(context).primaryColor,
+                color: Colors.black87,
               ),
             ),
             title: Text(
               history.placeName,
               style: const TextStyle(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
               ),
             ),
             subtitle: Column(
@@ -254,6 +294,7 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
                   history.address,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.grey[700]),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -266,7 +307,7 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
               ],
             ),
             trailing: IconButton(
-              icon: const Icon(Icons.more_vert),
+              icon: const Icon(Icons.more_vert, color: Colors.black54),
               onPressed: () => _showHistoryOptions(history),
             ),
             onTap: () => _showHistoryDetails(history),
@@ -278,30 +319,33 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
 
   Widget _buildStatisticsCard() {
     int totalVisits = _histories.fold(0, (sum, history) => sum + history.visitCount);
-    return Card(
-      margin: const EdgeInsets.all(8.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildStatItem(
-              icon: Icons.place,
-              value: _histories.length.toString(),
-              label: '방문 장소',
-            ),
-            _buildStatItem(
-              icon: Icons.repeat,
-              value: totalVisits.toString(),
-              label: '총 방문 횟수',
-            ),
-            _buildStatItem(
-              icon: Icons.category,
-              value: _categoryCounts.length.toString(),
-              label: '카테고리',
-            ),
-          ],
-        ),
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildStatItem(
+            icon: Icons.place,
+            value: _histories.length.toString(),
+            label: '방문 장소',
+          ),
+          _buildStatItem(
+            icon: Icons.repeat,
+            value: totalVisits.toString(),
+            label: '총 방문 횟수',
+          ),
+          _buildStatItem(
+            icon: Icons.category,
+            value: _categoryCounts.length.toString(),
+            label: '카테고리',
+          ),
+        ],
       ),
     );
   }
@@ -313,25 +357,31 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
   }) {
     return Column(
       children: [
-        Icon(icon, color: Theme.of(context).primaryColor),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: Colors.white),
+        ),
         const SizedBox(height: 8),
         Text(
           value,
           style: const TextStyle(
             fontSize: 18,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w800,
           ),
         ),
         Text(
           label,
-          style: const TextStyle(fontSize: 12),
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
         ),
       ],
     );
   }
 
   void _navigateToRecommendations() async {
-    // 현재 위치 확인
     final locationProvider = Provider.of<LocationProvider>(context, listen: false);
     try {
       await Navigator.push(
@@ -396,13 +446,27 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
   Future<void> _showHistoryOptions(VisitHistory history) async {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
               ListTile(
-                leading: const Icon(Icons.place),
+                leading: const Icon(Icons.place, color: Colors.black87),
                 title: const Text('상세 정보'),
                 onTap: () {
                   Navigator.pop(context);
@@ -410,7 +474,7 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.search),
+                leading: const Icon(Icons.search, color: Colors.black87),
                 title: const Text('비슷한 장소 찾기'),
                 onTap: () {
                   Navigator.pop(context);
@@ -418,8 +482,8 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete),
-                title: const Text('기록 삭제'),
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('기록 삭제', style: TextStyle(color: Colors.red)),
                 onTap: () {
                   Navigator.pop(context);
                   _deleteHistory(history);
@@ -433,10 +497,11 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
   }
 
   void _showHistoryDetails(VisitHistory history) {
-    // 장소 상세 정보 표시 (구현 예정)
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(history.placeName),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -456,14 +521,14 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('닫기'),
+            child: const Text('닫기', style: TextStyle(color: Colors.black)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               // 지도에서 위치 보기 기능 구현 (향후 추가)
             },
-            child: const Text('지도에서 보기'),
+            child: const Text('지도에서 보기', style: TextStyle(color: Colors.black)),
           ),
         ],
       ),
@@ -477,7 +542,6 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
 
       if (!mounted) return;
 
-      // 카테고리 기반 추천 화면으로 이동
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -526,11 +590,9 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     try {
       await _historyService.deleteVisitHistory(history.id);
 
-      // 목록 갱신
       setState(() {
         _histories.removeWhere((h) => h.id == history.id);
 
-        // 카테고리 카운트 갱신
         if (_categoryCounts[history.category] != null) {
           _categoryCounts[history.category] = _categoryCounts[history.category]! - 1;
           if (_categoryCounts[history.category] == 0) {
@@ -545,7 +607,7 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
         );
       }
 
-      _loadData(); // 데이터 다시 로드
+      _loadData();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -566,12 +628,14 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: const Text('방문 기록 전체 삭제'),
         content: const Text('모든 방문 기록을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
+            child: const Text('취소', style: TextStyle(color: Colors.black)),
           ),
           TextButton(
             onPressed: () {
@@ -592,7 +656,6 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     try {
       await _historyService.deleteAllVisitHistories();
 
-      // 목록 갱신
       setState(() {
         _histories.clear();
         _categoryCounts.clear();
@@ -604,7 +667,7 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
         );
       }
 
-      _loadData(); // 데이터 다시 로드
+      _loadData();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

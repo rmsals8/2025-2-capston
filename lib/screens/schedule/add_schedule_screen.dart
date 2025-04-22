@@ -38,186 +38,380 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
       create: (_) => ScheduleProvider(),
       child: Builder(
         builder: (context) => Scaffold(
+          backgroundColor: Colors.white,
           appBar: AppBar(
-            title: const Text('새 일정 추가'),
+            backgroundColor: Colors.white,
+            elevation: 0,
+            toolbarHeight: 80,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.black),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            title: const Text(
+              '새 일정 추가',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: Colors.black,
+              ),
+            ),
           ),
           body: Form(
             key: _formKey,
             child: ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(24),
               children: [
-                ListTile(
-                  title: const Text('일정 유형'),
-                  trailing: DropdownButton<String>(
-                    value: _type,
-                    items: const [
-                      DropdownMenuItem(value: 'FIXED', child: Text('고정 일정')),
-                      DropdownMenuItem(value: 'FLEXIBLE', child: Text('유연한 일정')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          _type = value;
-                          // 유연한 일정으로 변경 시 위치 관련 필드 초기화
-                          if (value == 'FLEXIBLE') {
-                            _locationController.clear();
-                            _startTime = null;
+                // 일정 유형 선택
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '일정 유형',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                      DropdownButton<String>(
+                        value: _type,
+                        dropdownColor: Colors.white,
+                        underline: const SizedBox(),
+                        icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black),
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'FIXED', child: Text('고정 일정')),
+                          DropdownMenuItem(value: 'FLEXIBLE', child: Text('유연한 일정')),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() {
+                              _type = value;
+                              if (value == 'FLEXIBLE') {
+                                _locationController.clear();
+                                _startTime = null;
+                              }
+                            });
                           }
-                        });
-                      }
-                    },
+                        },
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _nameController,
-                  decoration: InputDecoration(
-                    labelText: _type == 'FLEXIBLE' ? '방문할 곳 (예: 마트, 서점)' : '장소명',
-                    border: const OutlineInputBorder(),
+                const SizedBox(height: 24),
+                
+                // 장소명 입력
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  validator: (value) =>
-                  value?.isEmpty ?? true ? '장소명을 입력하세요' : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _locationController,
-                  decoration: InputDecoration(
-                    labelText: _type == 'FIXED' ? '위치 상세 (필수)' : '위치 상세 (선택사항)',
-                    hintText: _type == 'FIXED' ? '위치를 검색하세요' : '원하는 특정 위치가 있다면 검색하세요',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.search),
-                      // PlaceSearchScreen에서 위치 선택 후 돌아왔을 때의 처리 부분 수정
-                      onPressed: () async {
-                        final result = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const PlaceSearchScreen(),
-                          ),
-                        );
-                        if (result != null) {
-                          setState(() {
-                            // 기존 코드 유지
-                            _nameController.text = result['name'];
-                            _locationController.text = result['address'];
-                            _latitude = result['latitude'];
-                            _longitude = result['longitude'];
-
-                            // 디버깅용 로그 추가
-                            print('장소 선택: ${result['name']}, 좌표: (${result['latitude']}, ${result['longitude']})');
-                          });
-                        }
-                      },
+                  child: TextFormField(
+                    controller: _nameController,
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      labelText: _type == 'FLEXIBLE' ? '방문할 곳 (예: 마트, 서점)' : '장소명',
+                      labelStyle: TextStyle(color: Colors.grey[600]),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.all(16),
                     ),
-                    helperText: _type == 'FIXED' ? '정확한 위치를 입력해주세요' : '선택사항입니다',
-                    helperStyle: TextStyle(
-                      color: _type == 'FIXED' ? Colors.red : Colors.grey,
-                    ),
+                    validator: (value) =>
+                        value?.isEmpty ?? true ? '장소명을 입력하세요' : null,
                   ),
-                  readOnly: true,
-                  validator: (value) =>
-                  _type == 'FIXED' && (value?.isEmpty ?? true) ? '위치를 입력하세요' : null,
                 ),
                 const SizedBox(height: 16),
-                // 고정 일정일 때만 위치 입력 표시
+                
+                // 위치 상세 입력
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: TextFormField(
+                    controller: _locationController,
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      labelText: _type == 'FIXED' ? '위치 상세 (필수)' : '위치 상세 (선택사항)',
+                      labelStyle: TextStyle(color: Colors.grey[600]),
+                      hintText: _type == 'FIXED' ? '위치를 검색하세요' : '원하는 특정 위치가 있다면 검색하세요',
+                      hintStyle: TextStyle(color: Colors.grey[400]),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.all(16),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.search, color: Colors.black),
+                        onPressed: () async {
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const PlaceSearchScreen(),
+                            ),
+                          );
+                          if (result != null) {
+                            setState(() {
+                              _nameController.text = result['name'];
+                              _locationController.text = result['address'];
+                              _latitude = result['latitude'];
+                              _longitude = result['longitude'];
+                              print('장소 선택: ${result['name']}, 좌표: (${result['latitude']}, ${result['longitude']})');
+                            });
+                          }
+                        },
+                      ),
+                      helperText: _type == 'FIXED' ? '정확한 위치를 입력해주세요' : '선택사항입니다',
+                      helperStyle: TextStyle(
+                        color: _type == 'FIXED' ? Colors.red : Colors.grey[600],
+                      ),
+                    ),
+                    readOnly: true,
+                    validator: (value) =>
+                        _type == 'FIXED' && (value?.isEmpty ?? true) ? '위치를 입력하세요' : null,
+                  ),
+                ),
+                
+                // 고정 일정일 때 시작 시간
                 if (_type == 'FIXED') ...[
-                  const SizedBox(height: 16),
-
-                  const SizedBox(height: 16),
-                  ListTile(
-                    title: const Text('시작 시간'),
-                    subtitle: Text(_startTime == null
-                        ? '선택하세요'
-                        : _formatDateTime(_startTime!)),
-                    trailing: const Icon(Icons.access_time),
+                  const SizedBox(height: 24),
+                  InkWell(
                     onTap: _selectDateTime,
-                  ),
-                ],
-                if (_type == 'FLEXIBLE') ...[
-                  const SizedBox(height: 16),
-                  ListTile(
-                    title: const Text('우선순위'),
-                    trailing: DropdownButton<int>(
-                      value: _priority,
-                      items: [1,2,3,4,5].map((int value) {
-                        return DropdownMenuItem<int>(
-                          value: value,
-                          child: Text('$value'),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _priority = value);
-                        }
-                      },
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '시작 시간',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _startTime == null ? '선택하세요' : _formatDateTime(_startTime!),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: _startTime == null ? Colors.grey[400] : Colors.black,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Icon(Icons.access_time, color: Colors.black),
+                        ],
+                      ),
                     ),
                   ),
                 ],
-                const SizedBox(height: 16),
-                ListTile(
-                  title: const Text('예상 소요시간'),
-                  trailing: DropdownButton<int>(
-                    value: _duration,
-                    items: [30, 60, 90, 120, 180].map((int value) {
-                      return DropdownMenuItem<int>(
-                        value: value,
-                        child: Text('${value}분'),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _duration = value);
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: _addSchedule,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue[100],
-                    foregroundColor: Colors.black87,
-                  ),
-                  child: const Text('일정 추가하기'),
-                ),
-                if (_schedules.isNotEmpty) ...[
+                
+                // 유연한 일정일 때 우선순위
+                if (_type == 'FLEXIBLE') ...[
                   const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '우선순위',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        DropdownButton<int>(
+                          value: _priority,
+                          dropdownColor: Colors.white,
+                          underline: const SizedBox(),
+                          icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black),
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          items: [1,2,3,4,5].map((int value) {
+                            return DropdownMenuItem<int>(
+                              value: value,
+                              child: Text('$value'),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() => _priority = value);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                
+                // 예상 소요시간
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '예상 소요시간',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                      DropdownButton<int>(
+                        value: _duration,
+                        dropdownColor: Colors.white,
+                        underline: const SizedBox(),
+                        icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black),
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        items: [30, 60, 90, 120, 180].map((int value) {
+                          return DropdownMenuItem<int>(
+                            value: value,
+                            child: Text('${value}분'),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _duration = value);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // 일정 추가 버튼
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: _addSchedule,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      '일정 추가하기',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                
+                // 추가된 일정 목록
+                if (_schedules.isNotEmpty) ...[
+                  const SizedBox(height: 32),
                   const Text(
                     '추가된 일정 목록',
                     style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black,
                     ),
                   ),
+                  const SizedBox(height: 16),
                   ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: _schedules.length,
                     itemBuilder: (context, index) {
                       final schedule = _schedules[index];
-                      return ListTile(
-                        title: Text(schedule['name']),
-                        subtitle: Text('${schedule['type']} - ${schedule['type'] == 'FLEXIBLE' ? '유연한 일정' : schedule['location']}'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
-                            setState(() {
-                              _schedules.removeAt(index);
-                            });
-                          },
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ListTile(
+                          title: Text(
+                            schedule['name'],
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${schedule['type']} - ${schedule['type'] == 'FLEXIBLE' ? '유연한 일정' : schedule['location']}',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                            onPressed: () {
+                              setState(() {
+                                _schedules.removeAt(index);
+                              });
+                            },
+                          ),
                         ),
                       );
                     },
                   ),
                 ],
+                
+                // 전체 일정 저장 버튼
                 const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: _submitSchedules,
-                  child: const Text('전체 일정 저장'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: _submitSchedules,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      '전체 일정 저장',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ),
+                const SizedBox(height: 32),
               ],
             ),
           ),
@@ -232,12 +426,40 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
       initialDate: DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Colors.black,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+            dialogBackgroundColor: Colors.white,
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (date != null) {
       final time = await showTimePicker(
         context: context,
         initialTime: TimeOfDay.now(),
+        builder: (context, child) {
+          return Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: ColorScheme.light(
+                primary: Colors.black,
+                onPrimary: Colors.white,
+                surface: Colors.white,
+                onSurface: Colors.black,
+              ),
+              dialogBackgroundColor: Colors.white,
+            ),
+            child: child!,
+          );
+        },
       );
 
       if (time != null) {
@@ -303,6 +525,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
       });
     }
   }
+  
   Future<void> _submitSchedules() async {
     if (_schedules.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(

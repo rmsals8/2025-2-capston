@@ -5,6 +5,7 @@ import 'package:trip_helper/widgets/auth/custom_text_field.dart';
 import 'package:http/http.dart' as http;
 import 'package:trip_helper/screens/main_navigation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
 
@@ -38,17 +39,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Stack(
         children: [
-          if (_currentStep == 0)
-            _buildEmailStep(),
-          if (_currentStep == 1)
-            _buildVerificationStep(),
-          if (_currentStep == 2)
-            _buildSignupStep(),
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_currentStep == 0)
+                    _buildEmailStep(),
+                  if (_currentStep == 1)
+                    _buildVerificationStep(),
+                  if (_currentStep == 2)
+                    _buildSignupStep(),
+                ],
+              ),
+            ),
+          ),
+          if (_isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.3),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -59,57 +78,75 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const SizedBox(height: 32),
         const Text(
           '이메일 인증',
           style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
+            fontSize: 32,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
         Text(
           '회원가입을 위해 이메일 인증이 필요합니다.',
           style: TextStyle(
+            fontSize: 16,
             color: Colors.grey[600],
-            fontSize: 14,
           ),
         ),
-        const SizedBox(height: 16),
-        CustomTextField(
-          controller: _emailController,
-          hint: '이메일',
-          keyboardType: TextInputType.emailAddress,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return '이메일을 입력해주세요';
-            }
-            if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-              return '올바른 이메일 형식이 아닙니다';
-            }
-            return null;
-          },
-          prefix: const Icon(Icons.email_outlined),
+        const SizedBox(height: 48),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: CustomTextField(
+            controller: _emailController,
+            hint: '이메일',
+            keyboardType: TextInputType.emailAddress,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return '이메일을 입력해주세요';
+              }
+              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                return '올바른 이메일 형식이 아닙니다';
+              }
+              return null;
+            },
+            prefix: const Icon(Icons.email_outlined, color: Colors.grey),
+          ),
         ),
         const SizedBox(height: 24),
         SizedBox(
           width: double.infinity,
-          height: 48,
+          height: 56,
           child: ElevatedButton(
             onPressed: _isLoading ? null : _requestEmailVerification,
             style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
               ),
+              elevation: 0,
             ),
             child: _isLoading
-                ? const CircularProgressIndicator(color: Colors.white)
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
                 : const Text(
-              '인증 코드 요청',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+                    '인증 코드 요청',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
           ),
         ),
       ],
@@ -121,44 +158,58 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const SizedBox(height: 32),
         const Text(
           '인증 코드 확인',
           style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
+            fontSize: 32,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
         Text(
           '${_emailController.text}로 전송된 6자리 인증 코드를 입력해주세요.',
           style: TextStyle(
+            fontSize: 16,
             color: Colors.grey[600],
-            fontSize: 14,
           ),
         ),
         const SizedBox(height: 8),
         Text(
           '인증 코드는 5분간 유효합니다.',
           style: TextStyle(
-            color: Colors.grey[600],
-            fontSize: 12,
+            fontSize: 14,
+            color: Colors.grey[500],
+          ),
+        ),
+        const SizedBox(height: 48),
+        // 이메일 표시 (비활성화)
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: CustomTextField(
+            controller: _emailController,
+            hint: '이메일',
+            enabled: false,
+            prefix: const Icon(Icons.email_outlined, color: Colors.grey),
           ),
         ),
         const SizedBox(height: 16),
-        // 이메일 표시 (비활성화)
-        CustomTextField(
-          controller: _emailController,
-          hint: '이메일',
-          enabled: false,
-          prefix: const Icon(Icons.email_outlined),
-        ),
-        const SizedBox(height: 16),
         // 인증코드 입력
-        CustomTextField(
-          controller: _codeController,
-          hint: '인증 코드 6자리',
-          keyboardType: TextInputType.number,
-          prefix: const Icon(Icons.security),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: CustomTextField(
+            controller: _codeController,
+            hint: '인증 코드 6자리',
+            keyboardType: TextInputType.number,
+            prefix: const Icon(Icons.security, color: Colors.grey),
+          ),
         ),
         const SizedBox(height: 16),
         Row(
@@ -166,6 +217,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           children: [
             TextButton(
               onPressed: _isLoading ? null : _requestEmailVerification,
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey[600],
+              ),
               child: const Text('인증번호 재발송'),
             ),
             TextButton(
@@ -175,6 +229,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   _codeController.clear();
                 });
               },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey[600],
+              ),
               child: const Text('이메일 변경'),
             ),
           ],
@@ -182,23 +239,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
         const SizedBox(height: 24),
         SizedBox(
           width: double.infinity,
-          height: 48,
+          height: 56,
           child: ElevatedButton(
             onPressed: _isLoading ? null : _verifyCode,
             style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
               ),
+              elevation: 0,
             ),
             child: _isLoading
-                ? const CircularProgressIndicator(color: Colors.white)
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
                 : const Text(
-              '확인',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+                    '확인',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
           ),
         ),
       ],
@@ -210,80 +277,112 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const SizedBox(height: 32),
         const Text(
           '회원정보 입력',
           style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
+            fontSize: 32,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
         Text(
           '인증이 완료되었습니다. 회원가입을 완료해주세요.',
           style: TextStyle(
+            fontSize: 16,
             color: Colors.grey[600],
-            fontSize: 14,
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 48),
         // 인증된 이메일 (읽기 전용)
-        CustomTextField(
-          controller: _emailController,
-          hint: '이메일',
-          enabled: false,
-          prefix: const Icon(Icons.email_outlined),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: CustomTextField(
+            controller: _emailController,
+            hint: '이메일',
+            enabled: false,
+            prefix: const Icon(Icons.email_outlined, color: Colors.grey),
+          ),
         ),
         const SizedBox(height: 16),
         // 이름
-        CustomTextField(
-          controller: _nameController,
-          hint: '이름',
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return '이름을 입력해주세요';
-            }
-            return null;
-          },
-          prefix: const Icon(Icons.person_outline),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: CustomTextField(
+            controller: _nameController,
+            hint: '이름',
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return '이름을 입력해주세요';
+              }
+              return null;
+            },
+            prefix: const Icon(Icons.person_outline, color: Colors.grey),
+          ),
         ),
         const SizedBox(height: 16),
         // 비밀번호
-        CustomTextField(
-          controller: _passwordController,
-          hint: '비밀번호',
-          obscureText: true,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return '비밀번호를 입력해주세요';
-            }
-            if (value.length < 8) {
-              return '비밀번호는 8자 이상이어야 합니다';
-            }
-            return null;
-          },
-          prefix: const Icon(Icons.lock_outline),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: CustomTextField(
+            controller: _passwordController,
+            hint: '비밀번호',
+            obscureText: true,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return '비밀번호를 입력해주세요';
+              }
+              if (value.length < 8) {
+                return '비밀번호는 8자 이상이어야 합니다';
+              }
+              return null;
+            },
+            prefix: const Icon(Icons.lock_outline, color: Colors.grey),
+          ),
         ),
         const SizedBox(height: 16),
         // 비밀번호 확인
-        CustomTextField(
-          controller: _confirmPasswordController,
-          hint: '비밀번호 확인',
-          obscureText: true,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return '비밀번호를 다시 입력해주세요';
-            }
-            if (value != _passwordController.text) {
-              return '비밀번호가 일치하지 않습니다';
-            }
-            return null;
-          },
-          prefix: const Icon(Icons.lock_outline),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: CustomTextField(
+            controller: _confirmPasswordController,
+            hint: '비밀번호 확인',
+            obscureText: true,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return '비밀번호를 다시 입력해주세요';
+              }
+              if (value != _passwordController.text) {
+                return '비밀번호가 일치하지 않습니다';
+              }
+              return null;
+            },
+            prefix: const Icon(Icons.lock_outline, color: Colors.grey),
+          ),
         ),
         const SizedBox(height: 24),
         // 약관 동의
         CheckboxListTile(
-          title: const Text('서비스 이용약관 동의 (필수)'),
+          title: const Text(
+            '서비스 이용약관 동의 (필수)',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.black,
+            ),
+          ),
           value: _agreeToTerms,
           onChanged: (value) {
             setState(() {
@@ -292,9 +391,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
           },
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: EdgeInsets.zero,
+          activeColor: Colors.black,
+          checkboxShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+          ),
         ),
         CheckboxListTile(
-          title: const Text('마케팅 정보 수신 동의 (선택)'),
+          title: const Text(
+            '마케팅 정보 수신 동의 (선택)',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.black,
+            ),
+          ),
           value: _agreeToMarketing,
           onChanged: (value) {
             setState(() {
@@ -303,30 +412,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
           },
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: EdgeInsets.zero,
+          activeColor: Colors.black,
+          checkboxShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+          ),
         ),
         const SizedBox(height: 24),
         // 회원가입 버튼
         SizedBox(
           width: double.infinity,
-          height: 48,
+          height: 56,
           child: ElevatedButton(
             onPressed: _isLoading ? null : _handleCompleteSignup,
             style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
               ),
+              elevation: 0,
             ),
             child: _isLoading
-                ? const CircularProgressIndicator(color: Colors.white)
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
                 : const Text(
-              '회원가입',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+                    '회원가입',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
           ),
         ),
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -446,6 +570,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
     }
   }
+  
   // 회원가입 완료
   Future<void> _handleCompleteSignup() async {
     if (_nameController.text.isEmpty) {

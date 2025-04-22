@@ -6,6 +6,7 @@ import '../models/visit_history.dart';
 import '../services/place_recommendation_service.dart';
 import '../screens/navigation/navigation_screen.dart';
 import '../services/visit_history_service.dart';
+
 class PlaceRecommendationsScreen extends StatefulWidget {
   final LatLng currentLocation;
   final String title;
@@ -86,8 +87,19 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(widget.title),
+        title: Text(
+          widget.title,
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: Column(
         children: [
@@ -97,7 +109,7 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
           // 장소 목록 또는 로딩/에러 표시
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: CircularProgressIndicator(color: Colors.black))
                 : _errorMessage != null
                 ? _buildErrorView()
                 : _recommendations.isEmpty
@@ -124,8 +136,16 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: ChoiceChip(
-              label: Text(category),
+              label: Text(
+                category,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.black,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               selected: isSelected,
+              selectedColor: Colors.black,
+              backgroundColor: Colors.grey[100],
               onSelected: (selected) {
                 if (selected && category != _selectedCategory) {
                   setState(() {
@@ -134,6 +154,10 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                   _loadRecommendations();
                 }
               },
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              side: BorderSide.none,
             ),
           );
         },
@@ -148,11 +172,30 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
         children: [
           Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
           const SizedBox(height: 16),
-          Text(_errorMessage!),
+          Text(
+            _errorMessage!,
+            style: const TextStyle(fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: _loadRecommendations,
-            child: const Text('다시 시도'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              elevation: 0,
+            ),
+            child: const Text(
+              '다시 시도',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -164,10 +207,10 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
+          Icon(
             Icons.search_off,
             size: 64,
-            color: Colors.grey,
+            color: Colors.grey[400],
           ),
           const SizedBox(height: 16),
           Text(
@@ -175,7 +218,10 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                 ? '주변에 추천할 장소가 없습니다'
                 : '$_selectedCategory 카테고리의 추천 장소가 없습니다',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16),
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[600],
+            ),
           ),
           const SizedBox(height: 24),
           OutlinedButton(
@@ -185,7 +231,21 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
               });
               _loadRecommendations();
             },
-            child: const Text('모든 카테고리 보기'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.black,
+              side: const BorderSide(color: Colors.black),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: const Text(
+              '모든 카테고리 보기',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -194,7 +254,7 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
 
   Widget _buildRecommendationList() {
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       itemCount: _recommendations.length,
       itemBuilder: (context, index) {
         final place = _recommendations[index];
@@ -204,10 +264,16 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
   }
 
   Widget _buildPlaceCard(RecommendedPlace place) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
       child: InkWell(
         onTap: () => _showPlaceDetails(place),
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -221,13 +287,13 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                     width: 60,
                     height: 60,
                     decoration: BoxDecoration(
-                      color: Colors.grey[200],
+                      color: Colors.grey[100],
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
                       _getCategoryIcon(place.category),
                       size: 30,
-                      color: Colors.grey[700],
+                      color: Colors.black,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -241,15 +307,17 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                           place.name,
                           style: const TextStyle(
                             fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           place.category,
-                          style: TextStyle(
-                            color: Theme.of(context).primaryColor,
+                          style: const TextStyle(
+                            color: Colors.black,
                             fontSize: 14,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -337,14 +405,26 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                       }
                     },
                     icon: const Icon(Icons.bookmark_border, size: 18),
-                    label: const Text('저장'),
+                    label: const Text(
+                      '저장',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.black,
+                    ),
                   ),
 
                   // 내비게이션 버튼
                   TextButton.icon(
                     onPressed: () => _navigateToPlace(place),
                     icon: const Icon(Icons.directions, size: 18),
-                    label: const Text('길찾기'),
+                    label: const Text(
+                      '길찾기',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.black,
+                    ),
                   ),
                 ],
               ),
@@ -390,6 +470,7 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -402,7 +483,7 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
           builder: (context, scrollController) {
             return SingleChildScrollView(
               controller: scrollController,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -411,7 +492,7 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                     child: Container(
                       width: 40,
                       height: 4,
-                      margin: const EdgeInsets.only(bottom: 16),
+                      margin: const EdgeInsets.only(bottom: 24),
                       decoration: BoxDecoration(
                         color: Colors.grey[300],
                         borderRadius: BorderRadius.circular(2),
@@ -422,18 +503,22 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                   // 장소 아이콘
                   Align(
                     alignment: Alignment.center,
-                    child: CircleAvatar(
-                      radius: 40,
-                      backgroundColor: Colors.blue.withOpacity(0.1),
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       child: Icon(
                         _getCategoryIcon(place.category),
                         size: 40,
-                        color: Colors.blue,
+                        color: Colors.black,
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
 
                   // 장소 이름
                   Center(
@@ -441,7 +526,8 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                       place.name,
                       style: const TextStyle(
                         fontSize: 24,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -457,20 +543,20 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         place.category,
-                        style: TextStyle(
-                          color: Theme.of(context).primaryColor,
-                          fontWeight: FontWeight.bold,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 32),
 
                   // 주소
                   _buildDetailItem(Icons.location_on, '주소', place.address),
@@ -505,12 +591,24 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                           _navigateToPlace(place);
                         },
                         icon: const Icon(Icons.navigation),
-                        label: const Text('길찾기'),
+                        label: const Text(
+                          '길찾기',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                         style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 24,
                             vertical: 12,
                           ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          elevation: 0,
                         ),
                       ),
 
@@ -523,11 +621,22 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                           );
                         },
                         icon: const Icon(Icons.bookmark_border),
-                        label: const Text('저장'),
+                        label: const Text(
+                          '저장',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                         style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.black,
+                          side: const BorderSide(color: Colors.black),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 24,
                             vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                       ),
@@ -565,6 +674,8 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                 value,
                 style: const TextStyle(
                   fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black,
                 ),
               ),
             ],

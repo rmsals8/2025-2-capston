@@ -7,7 +7,6 @@ import 'package:trip_helper/screens/route/route_generation_screen.dart';
 import 'package:trip_helper/screens/profile/profile_history_screen.dart';
 import 'package:trip_helper/providers/location_provider.dart';
 import 'package:trip_helper/providers/navigation_provider.dart';
-import 'package:trip_helper/providers/auth_provider.dart';
 import 'package:trip_helper/services/navigation_service.dart';
 import 'package:trip_helper/services/visit_history_service.dart';
 import 'package:trip_helper/services/place_recommendation_service.dart';
@@ -60,6 +59,7 @@ class _MainNavigationState extends State<MainNavigation> {
         Provider<PlaceRecommendationService>.value(value: _recommendationService),
       ],
       child: Scaffold(
+        backgroundColor: Colors.white,
         body: PageView(
           controller: _pageController,
           physics: const NeverScrollableScrollPhysics(),
@@ -74,24 +74,92 @@ class _MainNavigationState extends State<MainNavigation> {
             });
           },
         ),
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: _selectedIndex,
-          onTap: _onItemTapped,
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: Theme.of(context).primaryColor,
-          unselectedItemColor: Colors.grey,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home),
-              label: '홈',
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _buildNavItem(
+                        icon: Icons.home_outlined,
+                        activeIcon: Icons.home,
+                        label: '홈',
+                        index: 0,
+                      ),
+                      _buildNavItem(
+                        icon: Icons.route_outlined,
+                        activeIcon: Icons.route,
+                        label: '경로',
+                        index: 1,
+                      ),
+                      _buildNavItem(
+                        icon: Icons.person_outline,
+                        activeIcon: Icons.person,
+                        label: '프로필',
+                        index: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.map),
-              label: '경로',
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem({
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+    required int index,
+  }) {
+    final isSelected = _selectedIndex == index;
+    
+    return InkWell(
+      onTap: () => _onItemTapped(index),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.black : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSelected ? activeIcon : icon,
+              color: isSelected ? Colors.white : Colors.grey[600],
+              size: 24,
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: '프로필',
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.grey[600],
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
             ),
           ],
         ),

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';  // Timer를 위해 추가
-import 'package:flutter_dotenv/flutter_dotenv.dart' ;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class PlaceSearchScreen extends StatefulWidget {
   const PlaceSearchScreen({Key? key}) : super(key: key);
@@ -62,9 +62,23 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('장소 검색'),
+        backgroundColor: Colors.white,
         elevation: 0,
+        toolbarHeight: 80,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          '장소 검색',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
+          ),
+        ),
       ),
       body: Column(
         children: [
@@ -74,70 +88,126 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
               ],
             ),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: '장소를 검색하세요',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _isLoading
-                    ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-                    : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.grey[100],
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
               ),
-              onChanged: (value) {
-                if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
-                _searchDebounce = Timer(const Duration(milliseconds: 500), () {
-                  _searchPlaces(value);
-                });
-              },
+              child: TextField(
+                controller: _searchController,
+                style: const TextStyle(fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: '장소를 검색하세요',
+                  hintStyle: TextStyle(color: Colors.grey[400]),
+                  prefixIcon: const Icon(Icons.search, color: Colors.black),
+                  suffixIcon: _isLoading
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                          ),
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
+                ),
+                onChanged: (value) {
+                  if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+                  _searchDebounce = Timer(const Duration(milliseconds: 500), () {
+                    _searchPlaces(value);
+                  });
+                },
+              ),
             ),
           ),
           Expanded(
-            child: ListView.builder(
-              itemCount: _places.length,
-              itemBuilder: (context, index) {
-                final place = _places[index];
-                return ListTile(
-                  leading: const Icon(Icons.location_on),
-                  title: Text(
-                    place['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+            child: _places.isEmpty 
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.search_off_rounded,
+                        size: 64,
+                        color: Colors.grey[300],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '검색 결과가 없습니다',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
                   ),
-                  subtitle: Text(
-                    place['address'] ?? place['roadAddress'] ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onTap: () {
-                    Navigator.pop(context, {
-                      'name': place['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
-                      'address': place['address'] ?? place['roadAddress'] ?? '',
-                      'latitude': double.tryParse(place['mapy'] ?? '') ?? 0,
-                      'longitude': double.tryParse(place['mapx'] ?? '') ?? 0,
-                    });
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _places.length,
+                  itemBuilder: (context, index) {
+                    final place = _places[index];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[200]!),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.location_on, color: Colors.black),
+                        ),
+                        title: Text(
+                          place['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                        subtitle: Text(
+                          place['address'] ?? place['roadAddress'] ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                        trailing: Icon(
+                          Icons.chevron_right,
+                          color: Colors.grey[400],
+                        ),
+                        onTap: () {
+                          Navigator.pop(context, {
+                            'name': place['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
+                            'address': place['address'] ?? place['roadAddress'] ?? '',
+                            'latitude': double.tryParse(place['mapy'] ?? '') ?? 0,
+                            'longitude': double.tryParse(place['mapx'] ?? '') ?? 0,
+                          });
+                        },
+                      ),
+                    );
                   },
-                );
-              },
-            ),
+                ),
           ),
         ],
       ),

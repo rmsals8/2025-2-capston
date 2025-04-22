@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
+
 // 대중교통 정보를 저장할 클래스
 class TransitDetails {
   final String line;
@@ -820,7 +821,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
     }
   }
 
-  // 경로 안내 UI 위젯
+  // 경로 안내 UI 위젯 - Modern 디자인 적용
   Widget _buildRouteInstructions() {
     // 안내가 없을 경우 빈 컨테이너 반환
     if (_instructions.isEmpty) {
@@ -829,15 +830,14 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
         ),
-        child: const Text('경로 안내 정보가 없습니다.'),
+        child: const Text(
+          '경로 안내 정보가 없습니다.',
+          style: TextStyle(
+            fontSize: 16,
+            color: Colors.black,
+          ),
+        ),
       );
     }
 
@@ -848,12 +848,12 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       }
 
       return Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(16),
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
-          color: Colors.blue.withOpacity(0.1),
+          color: Colors.blue.withOpacity(0.05),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.blue.withOpacity(0.3)),
+          border: Border.all(color: Colors.blue.withOpacity(0.2)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -861,12 +861,12 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
             const Text(
               '대중교통 이용 정보',
               style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                fontSize: 18,
                 color: Colors.blue,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             ..._transitDetails.map((detail) {
               IconData vehicleIcon;
               Color vehicleColor;
@@ -888,7 +888,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(vehicleIcon, color: vehicleColor, size: 20),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -896,10 +896,12 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
                           Text(
                             '${detail.vehicle} ${detail.line}',
                             style: TextStyle(
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w600,
                               color: vehicleColor,
+                              fontSize: 16,
                             ),
                           ),
+                          const SizedBox(height: 4),
                           Text(
                             '${detail.departureStop} → ${detail.arrivalStop}',
                             style: const TextStyle(fontSize: 14),
@@ -927,32 +929,29 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
                   '상세 안내',
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black,
                   ),
                 ),
                 IconButton(
-                  icon: Icon(_showFullInstructions ? Icons.expand_less : Icons.expand_more),
+                  icon: Icon(
+                    _showFullInstructions ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.black,
+                  ),
                   onPressed: () {
                     setState(() {
                       _showFullInstructions = !_showFullInstructions;
@@ -970,7 +969,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
               child: _buildTransitSummary(),
             ),
 
-          const Divider(height: 1),
+          const Divider(height: 1, color: Color(0xFFEEEEEE)),
           if (_showFullInstructions)
           // 전체 안내 목록
             ListView.builder(
@@ -985,18 +984,30 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
                 bool isTransitInfo = instruction.startsWith('🚍');
 
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      CircleAvatar(
-                        backgroundColor: isTransitInfo
-                            ? Colors.blue.withOpacity(0.2)
-                            : Colors.grey.withOpacity(0.2),
-                        radius: 12,
-                        child: isTransitInfo
-                            ? const Icon(Icons.directions_transit, size: 14, color: Colors.blue)
-                            : Text('${index + 1}', style: const TextStyle(fontSize: 12)),
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: isTransitInfo
+                              ? Colors.blue.withOpacity(0.1)
+                              : Colors.grey[200],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Center(
+                          child: isTransitInfo
+                              ? const Icon(Icons.directions_transit, size: 14, color: Colors.blue)
+                              : Text(
+                                  '${index + 1}', 
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  )
+                                ),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -1004,7 +1015,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
                           instruction,
                           style: TextStyle(
                             fontSize: 14,
-                            fontWeight: isTransitInfo ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isTransitInfo ? FontWeight.w600 : FontWeight.normal,
                             color: isTransitInfo ? Colors.blue : Colors.black,
                           ),
                         ),
@@ -1017,7 +1028,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
           else
           // 첫 번째 안내만 표시
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Text(
                 _instructions.first.replaceAll(RegExp(r'<[^>]*>'), ' ').trim(),
                 style: const TextStyle(fontSize: 14),
@@ -1030,34 +1041,37 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
     );
   }
 
-  // 이동 수단 버튼 위젯
+  // 이동 수단 버튼 위젯 - Modern 디자인 적용
   Widget _buildTransportModeButton(String mode, IconData icon, String label, bool isSelected, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
-      child: Padding(
+      child: Container(
+        width: 80,
         padding: const EdgeInsets.all(8.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                color: isSelected ? Colors.blue.withOpacity(0.2) : Colors.grey.withOpacity(0.1),
-                shape: BoxShape.circle,
+                color: isSelected ? Colors.black : Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 icon,
-                color: isSelected ? Colors.blue : Colors.grey,
+                color: isSelected ? Colors.white : Colors.black,
                 size: 24,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             Text(
               label,
               style: TextStyle(
-                color: isSelected ? Colors.blue : Colors.grey[600],
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected ? Colors.black : Colors.grey[600],
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               ),
             ),
           ],
@@ -1069,8 +1083,19 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text('${widget.startName} → ${widget.endName}'),
+        title: Text(
+          '${widget.startName} → ${widget.endName}',
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: Stack(
         children: [
@@ -1122,7 +1147,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
 
                 // 경로 정보 및 컨트롤 패널
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: _instructions.isEmpty
@@ -1130,9 +1155,9 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
                         : BorderRadius.zero,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withOpacity(0.05),
+                        spreadRadius: 0,
                         blurRadius: 10,
-                        offset: const Offset(0, -2),
                       ),
                     ],
                   ),
@@ -1142,11 +1167,11 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
                     children: [
                       if (_errorMessage != null && _routePoints.isNotEmpty)
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0),
+                          padding: const EdgeInsets.only(bottom: 16.0),
                           child: Container(
-                            padding: const EdgeInsets.all(8),
+                            padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.1),
+                              color: Colors.red.withOpacity(0.05),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
@@ -1170,8 +1195,9 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
                       Text(
                         '${_getTransportModeText()} 경로',
                         style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -1182,7 +1208,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
                           fontSize: 14,
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
 
                       // 이동 수단 선택 UI
                       Row(
@@ -1212,9 +1238,10 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
                         ],
                       ),
 
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
+                        height: 56,
                         child: ElevatedButton(
                           onPressed: () {
                             if (_mapController != null) {
@@ -1222,11 +1249,20 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
                             }
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
+                            backgroundColor: Colors.black,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            elevation: 0,
                           ),
-                          child: const Text('전체 경로 보기'),
+                          child: const Text(
+                            '전체 경로 보기',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -1249,4 +1285,5 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
         ],
       ),
     );
-  }}
+  }
+}

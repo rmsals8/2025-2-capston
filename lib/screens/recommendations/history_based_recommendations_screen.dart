@@ -136,8 +136,23 @@ class _HistoryBasedRecommendationsScreenState extends State<HistoryBasedRecommen
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('나를 위한 추천'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        toolbarHeight: 80,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          '나를 위한 추천',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
+          ),
+        ),
       ),
       body: Column(
         children: [
@@ -147,7 +162,7 @@ class _HistoryBasedRecommendationsScreenState extends State<HistoryBasedRecommen
           // 본문 영역 (로딩/에러/결과)
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: CircularProgressIndicator(color: Colors.black))
                 : _errorMessage != null
                 ? _buildErrorView()
                 : _recommendations.isEmpty
@@ -162,7 +177,7 @@ class _HistoryBasedRecommendationsScreenState extends State<HistoryBasedRecommen
   Widget _buildCategorySelector() {
     return Container(
       height: 60,
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical: 8),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -176,6 +191,12 @@ class _HistoryBasedRecommendationsScreenState extends State<HistoryBasedRecommen
             child: ChoiceChip(
               label: Text(category),
               selected: isSelected,
+              selectedColor: Colors.black,
+              backgroundColor: Colors.grey[100],
+              labelStyle: TextStyle(
+                color: isSelected ? Colors.white : Colors.black87,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
               onSelected: (selected) {
                 if (selected && category != _selectedCategory) {
                   setState(() {
@@ -196,12 +217,24 @@ class _HistoryBasedRecommendationsScreenState extends State<HistoryBasedRecommen
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+          Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
           const SizedBox(height: 16),
-          Text(_errorMessage!),
+          Text(
+            _errorMessage!,
+            style: TextStyle(color: Colors.grey[600], fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: _loadData,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
             child: const Text('다시 시도'),
           ),
         ],
@@ -214,10 +247,10 @@ class _HistoryBasedRecommendationsScreenState extends State<HistoryBasedRecommen
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
+          Icon(
             Icons.search_off,
             size: 64,
-            color: Colors.grey,
+            color: Colors.grey[300],
           ),
           const SizedBox(height: 16),
           Text(
@@ -225,16 +258,27 @@ class _HistoryBasedRecommendationsScreenState extends State<HistoryBasedRecommen
                 ? '추천할 장소가 없습니다'
                 : '$_selectedCategory 카테고리의 추천 장소가 없습니다',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16),
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[800],
+            ),
           ),
           const SizedBox(height: 24),
-          OutlinedButton(
+          ElevatedButton(
             onPressed: () {
               setState(() {
                 _selectedCategory = '전체';
               });
               _updateRecommendations();
             },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
             child: const Text('다른 카테고리 찾기'),
           ),
         ],
@@ -250,15 +294,29 @@ class _HistoryBasedRecommendationsScreenState extends State<HistoryBasedRecommen
         final place = _recommendations[index];
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
-          child: RecommendedPlaceCard(
-            place: place,
-            onTap: () {
-              // 상세 정보 표시 (필요에 따라 구현)
-            },
-            onNavigate: () {
-              // 내비게이션 시작
-              // 내비게이션 화면으로 이동하는 코드 (생략)
-            },
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: RecommendedPlaceCard(
+              place: place,
+              onTap: () {
+                // 상세 정보 표시 (필요에 따라 구현)
+              },
+              onNavigate: () {
+                // 내비게이션 시작
+                // 내비게이션 화면으로 이동하는 코드 (생략)
+              },
+            ),
           ),
         );
       },

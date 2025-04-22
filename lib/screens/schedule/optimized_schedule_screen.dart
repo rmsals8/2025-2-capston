@@ -6,6 +6,7 @@ import 'package:trip_helper/models/schedule.dart';
 import 'package:trip_helper/screens/route/route_list_screen.dart';
 import 'package:trip_helper/providers/route_provider.dart';
 import 'dart:math';
+
 class OptimizedScheduleScreen extends StatefulWidget {
   final Map<String, dynamic> optimizedData;
 
@@ -36,8 +37,23 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
     final metrics = widget.optimizedData['metrics'] as Map<String, dynamic>? ?? {};
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('최적화된 일정'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        toolbarHeight: 80,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          '최적화된 일정',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
+          ),
+        ),
       ),
       body: Column(
         children: [
@@ -48,7 +64,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildMetricsCard(metrics),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
                   _buildScheduleList(optimizedSchedules, alternativeOptions),
                 ],
               ),
@@ -61,26 +77,73 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
   }
 
   Widget _buildMetricsCard(Map<String, dynamic> metrics) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '전체 일정 통계',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text('총 거리: ${metrics['totalDistance']?.toStringAsFixed(1) ?? '0.0'}km'),
-            Text('총 소요시간: ${metrics['totalTime'] ?? '0'}분'),
-            Text('예상 비용: ${metrics['totalCost']?.toStringAsFixed(0) ?? '0'}원'),
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '전체 일정 통계',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildMetricItem(
+                icon: Icons.route,
+                value: '${metrics['totalDistance']?.toStringAsFixed(1) ?? '0.0'}km',
+                label: '총 거리',
+              ),
+              _buildMetricItem(
+                icon: Icons.access_time,
+                value: '${metrics['totalTime'] ?? '0'}분',
+                label: '총 소요시간',
+              ),
+              _buildMetricItem(
+                icon: Icons.attach_money,
+                value: '${metrics['totalCost']?.toStringAsFixed(0) ?? '0'}원',
+                label: '예상 비용',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricItem({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.black87, size: 24),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 16,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 14,
+          ),
+        ),
+      ],
     );
   }
 
@@ -94,10 +157,10 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
           '최적화된 일정',
           style: TextStyle(
             fontSize: 18,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w800,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -144,64 +207,86 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
               }
             }
 
-            return Card(
+            return Container(
               margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[200]!),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ListTile(
-                    title: Text(
-                      // 유연한 일정인 경우 장소 이름과 함께 표시
-                      isFlexible
-                          ? "${schedule['name']} (${_extractPlaceName(schedule['location'])})"
-                          : schedule['name'],
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isFlexible ? Colors.blue : Colors.black,
-                      ),
-                    ),
-                    // _buildScheduleList 메소드의 ListTile 부분에서
-                    subtitle: Column(
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                // 유연한 일정인 경우 장소 이름과 함께 표시
+                                isFlexible
+                                    ? "${schedule['name']} (${_extractPlaceName(schedule['location'])})"
+                                    : schedule['name'],
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                  color: isFlexible ? Colors.blue[700] : Colors.black,
+                                ),
+                              ),
+                            ),
+                            if (isFlexible && alternativeOptions.containsKey(schedule['id']))
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                ),
+                                onPressed: () => _showAlternatives(
+                                    context,
+                                    schedule['id'],
+                                    alternativeOptions[schedule['id']] ?? []
+                                ),
+                                child: const Text('대안 보기'),
+                              ),
+                          ],
+                        ),
                         if (address.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(top: 4.0, bottom: 4.0),
+                            padding: const EdgeInsets.only(top: 8.0),
                             child: Text(
-                              // 긴 JSON 형식 주소를 사용자 친화적으로 표시
                               '주소: ${_formatAddress(address)}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.black87,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[700],
                               ),
                             ),
                           ),
+                        const SizedBox(height: 8),
                         Text(
                           '일정: ${_formatDateTime(schedule['startTime'])} - ${_formatDateTime(schedule['endTime'])}',
                           style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[700],
+                            fontSize: 14,
+                            color: Colors.grey[600],
                           ),
                         ),
                       ],
                     ),
-                    trailing: isFlexible && alternativeOptions.containsKey(schedule['id'])
-                        ? TextButton(
-                      child: const Text('대안 보기'),
-                      onPressed: () => _showAlternatives(
-                          context,
-                          schedule['id'],
-                          alternativeOptions[schedule['id']] ?? []
-                      ),
-                    )
-                        : null,
                   ),
 
                   // 유연한 일정인 경우 미리 대안 표시 (축소 버전)
                   if (isFlexible && alternativeOptions.containsKey(schedule['id']))
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    Container(
+                      color: Colors.grey[50],
+                      padding: const EdgeInsets.all(16),
                       child: _buildAlternativesPreview(
                           schedule['id'],
                           alternativeOptions[schedule['id']]
@@ -215,7 +300,8 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
       ],
     );
   }
-// 주소 형식 간소화 메소드
+
+  // 주소 형식 간소화 메소드
   String _formatAddress(String address) {
     // JSON 형식으로 보이는 주소 처리
     if (address.startsWith('{') && address.contains(':')) {
@@ -256,6 +342,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
     // 일반 텍스트 주소는 그대로 반환
     return address;
   }
+
   // 대안 미리보기 위젯
   Widget _buildAlternativesPreview(String scheduleId, List<dynamic> options) {
     if (options.isEmpty) return const SizedBox.shrink();
@@ -268,32 +355,32 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
       children: [
         const Text(
           '다른 장소 옵션:',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
         ...limitedOptions.map((option) {
           final place = option['place'];
           return Padding(
-            padding: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
-                Icon(Icons.place, size: 16, color: Colors.grey[600]),
-                const SizedBox(width: 4),
+                Icon(Icons.place, size: 18, color: Colors.grey[600]),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         '${place['name']} (${_formatDateTime(option['startTime'])})',
-                        style: TextStyle(fontSize: 13, color: Colors.grey[800], fontWeight: FontWeight.w500),
+                        style: TextStyle(fontSize: 14, color: Colors.grey[800], fontWeight: FontWeight.w500),
                         overflow: TextOverflow.ellipsis,
                       ),
                       if (place['formatted_address'] != null)
                         Padding(
-                          padding: const EdgeInsets.only(top: 2.0),
+                          padding: const EdgeInsets.only(top: 4.0),
                           child: Text(
                             place['formatted_address'],
-                            style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
@@ -309,8 +396,12 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              child: const Text('더보기...', style: TextStyle(fontSize: 12)),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
               onPressed: () => _showAlternatives(context, scheduleId, options),
+              child: const Text('더보기...', style: TextStyle(fontSize: 12)),
             ),
           ),
       ],
@@ -322,6 +413,10 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.6,
         maxChildSize: 0.8,
@@ -332,8 +427,19 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
               const Text('대체 장소 옵션',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 16),
               Expanded(
@@ -345,57 +451,58 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
                     final place = option['place'];
                     final isSelected = selectedAlternatives[scheduleId] == index;
 
-                    return Card(
-                      color: isSelected ? Colors.blue[50] : null,
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: isSelected ? Colors.grey[100] : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: isSelected ? Colors.black : Colors.grey[200]!),
+                      ),
                       child: ListTile(
+                        contentPadding: const EdgeInsets.all(12),
                         title: Text(place['name'],
                           style: TextStyle(
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                           ),
                         ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Padding(
-                              padding: const EdgeInsets.only(top: 4.0, bottom: 4.0),
+                              padding: const EdgeInsets.only(top: 8.0),
                               child: Text(
                                 '주소: ${place['formatted_address'] ?? '주소 정보 없음'}',
                                 style: const TextStyle(
                                   fontSize: 13,
-                                  fontWeight: FontWeight.w500,
                                 ),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            const SizedBox(height: 4),
                             Text('${_formatDateTime(option['startTime'])} - ${_formatDateTime(option['endTime'])}'),
                             if (place['rating'] != null)
-                              Row(
-                                children: [
-                                  const Icon(Icons.star, size: 16, color: Colors.amber),
-                                  Text(' ${place['rating']}'),
-                                ],
-                              ),
-                            if (place['formatted_address'] != null)
                               Padding(
-                                padding: const EdgeInsets.only(top: 2.0),
-                                child: Text(
-                                  '${place['formatted_address']}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[800],
-                                    fontStyle: FontStyle.normal,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 2,
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.star, size: 16, color: Colors.amber),
+                                    Text(' ${place['rating']}'),
+                                  ],
                                 ),
                               ),
                           ],
                         ),
                         trailing: isSelected
-                            ? const Icon(Icons.check_circle, color: Colors.blue)
+                            ? const Icon(Icons.check_circle, color: Colors.black)
                             : TextButton(
-                          child: const Text('선택'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.black,
+                            backgroundColor: Colors.grey[100],
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
                           onPressed: () {
                             setState(() {
                               selectedAlternatives[scheduleId] = index;
@@ -406,6 +513,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
                             // 예: API 호출하여 일정 업데이트
                             _updateScheduleWithAlternative(scheduleId, option);
                           },
+                          child: const Text('선택'),
                         ),
                       ),
                     );
@@ -464,10 +572,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
     }
   }
 
-// 장소 위치에서 이름만 추출
-// lib/screens/schedule/optimized_schedule_screen.dart 파일에서
-
-// 장소 위치에서 이름만 추출 - 수정된 버전
+  // 장소 위치에서 이름만 추출
   String _extractPlaceName(dynamic location) {
     if (location == null) return '';
 
@@ -545,7 +650,8 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
 
     return '';
   }
-// 유틸리티 함수 - 다양한 형태의 위치 데이터에서 좌표 추출
+
+  // 유틸리티 함수 - 다양한 형태의 위치 데이터에서 좌표 추출
   Map<String, double> extractCoordinates(dynamic locationData) {
     double latitude = 0.0;
     double longitude = 0.0;
@@ -583,16 +689,31 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
     }
     return null;
   }
+
   Widget _buildRouteButton(BuildContext context, List<Map<String, dynamic>> schedules) {
-    return Padding(
+    return Container(
       padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
       child: SizedBox(
         width: double.infinity,
-        height: 50,
+        height: 56,
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue,
+            backgroundColor: Colors.black,
             foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            elevation: 0,
           ),
           onPressed: () async {
             try {
@@ -662,7 +783,13 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
               }
             }
           },
-          child: const Text('경로 생성'),
+          child: const Text(
+            '경로 생성',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ),
     );
@@ -678,7 +805,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
     }
   }
 
-  double _parseCoordinate(dynamic value) {
+double _parseCoordinate(dynamic value) {
     if (value == null) return 0.0;
 
     // 큰 정수값을 실제 좌표로 변환 (355437482.0 -> 35.5437482)

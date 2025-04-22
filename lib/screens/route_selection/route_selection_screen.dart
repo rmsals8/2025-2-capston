@@ -50,7 +50,7 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
       Polyline(
         polylineId: const PolylineId('route'),
         points: [widget.startLocation, widget.endLocation],
-        color: Colors.blue,
+        color: Colors.black,
         width: 5,
       ),
     };
@@ -59,18 +59,46 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('경로 선택'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        toolbarHeight: 80,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          '경로 선택',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
+          ),
         ),
       ),
       body: Consumer<NavigationProvider>(
         builder: (context, provider, child) {
           if (provider.error != null) {
             return Center(
-              child: Text('Error: ${provider.error}'),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: Colors.grey[600],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error: ${provider.error}',
+                    style: TextStyle(
+                      color: Colors.grey[800],
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
             );
           }
 
@@ -98,23 +126,82 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
                   right: 0,
                   bottom: 0,
                   child: Container(
-                    color: Colors.white,
-                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, -5),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          '총 거리: ${provider.selectedRoute!.distance.toStringAsFixed(1)}km',
-                          style: const TextStyle(fontSize: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            Column(
+                              children: [
+                                const Icon(
+                                  Icons.route,
+                                  color: Colors.black,
+                                  size: 24,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${provider.selectedRoute!.distance.toStringAsFixed(1)}km',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                Text(
+                                  '총 거리',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Container(
+                              height: 50,
+                              width: 1,
+                              color: Colors.grey[300],
+                            ),
+                            Column(
+                              children: [
+                                const Icon(
+                                  Icons.access_time,
+                                  color: Colors.black,
+                                  size: 24,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${provider.selectedRoute!.duration}분',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                Text(
+                                  '예상 소요시간',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '예상 소요시간: ${provider.selectedRoute!.duration}분',
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 24),
                         SizedBox(
                           width: double.infinity,
+                          height: 56,
                           child: ElevatedButton(
                             onPressed: () {
                               Navigator.push(
@@ -128,16 +215,18 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
                               );
                             },
                             style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              backgroundColor: Colors.black,
+                              foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(8),
                               ),
+                              elevation: 0,
                             ),
                             child: const Text(
                               '내비게이션 시작',
                               style: TextStyle(
                                 fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),

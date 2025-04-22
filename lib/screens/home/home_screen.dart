@@ -24,6 +24,7 @@ import '../recommendations/history_based_recommendations_screen.dart';
 import '../profile/visit_history_screen.dart';
 import '../place_recommendations_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
@@ -723,6 +724,7 @@ Future<void> _loadData() async {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
@@ -730,21 +732,27 @@ Future<void> _loadData() async {
           onRefresh: _loadData,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(),
-                _buildSearchBar(),
-                _buildRecentPlaces(),
-                _buildRecommendedPlaces(),
-                _buildPopularCategories(),
-              ],
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 24),
+                  _buildSearchBar(),
+                  const SizedBox(height: 32),
+                  _buildRecentPlaces(),
+                  _buildRecommendedPlaces(),
+                  _buildPopularCategories(),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+  
   // 한글 인코딩 수정 함수
   String _correctKoreanEncoding(String text) {
     try {
@@ -778,76 +786,63 @@ Future<void> _loadData() async {
 
     return text; // 모든 방법 실패시 원래 텍스트 반환
   }
+  
   Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '여행 도우미',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '여행 도우미',
+          style: TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
           ),
-          const SizedBox(height: 4),
-          Text(
-            '오늘도 좋은 하루 보내세요!',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '오늘도 좋은 하루 보내세요!',
+          style: TextStyle(
+            fontSize: 16,
+            color: Colors.grey[600],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildSearchBar() {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         children: [
           Row(
             children: [
-              GestureDetector(
-                onTap: _isListening ? _stopListening : _startListening,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _isListening ? Colors.blue.withOpacity(0.1) : Colors.transparent,
-                    shape: BoxShape.circle,
-                  ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: GestureDetector(
+                  onTap: _isListening ? _stopListening : _startListening,
                   child: Icon(
                     _isListening ? Icons.mic : Icons.mic_none,
-                    color: _isListening ? Colors.blue : Colors.grey,
+                    color: _isListening ? Colors.blue : Colors.grey[400],
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
               Expanded(
                 child: TextField(
                   controller: _searchController,
+                  style: const TextStyle(fontSize: 16),
                   decoration: InputDecoration(
                     hintText: _isListening ? '말씀하세요...' : '목적지나 경로를 검색하세요',
-                    border: InputBorder.none,
                     hintStyle: TextStyle(
-                      color: _isListening ? Colors.blue : Colors.grey,
+                      color: _isListening ? Colors.blue : Colors.grey[400],
                       fontStyle: _isListening ? FontStyle.italic : FontStyle.normal,
                     ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.all(16),
                   ),
                   onSubmitted: (value) {
                     if (value.isNotEmpty) {
@@ -859,7 +854,7 @@ Future<void> _loadData() async {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.search),
+                icon: Icon(Icons.search, color: Colors.grey[400]),
                 onPressed: () {
                   if (_searchController.text.isNotEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -872,23 +867,33 @@ Future<void> _loadData() async {
           ),
           // 텍스트로 일정 추가 버튼
           Padding(
-            padding: const EdgeInsets.only(top: 8.0),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: SizedBox(
               width: double.infinity,
+              height: 48,
               child: ElevatedButton.icon(
-                icon: Icon(Icons.calendar_today, size: 16),
-                label: Text('텍스트로 일정 추가'),
+                icon: const Icon(Icons.calendar_today, size: 20),
+                label: const Text(
+                  '텍스트로 일정 추가',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
+                  backgroundColor: Colors.black,
                   foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
                 ),
                 onPressed: () {
                   if (_searchController.text.isNotEmpty) {
                     _processScheduleVoiceInput(_searchController.text);
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('일정 내용을 입력해주세요')),
+                      const SnackBar(content: Text('일정 내용을 입력해주세요')),
                     );
                   }
                 },
@@ -908,36 +913,40 @@ Future<void> _loadData() async {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                '최근 방문 장소',
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              '최근 방문 장소',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const VisitHistoryScreen(),
+                  ),
+                );
+              },
+              child: const Text(
+                '더보기',
                 style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              TextButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const VisitHistoryScreen(),
-                    ),
-                  );
-                },
-                child: const Text('더보기'),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
+        const SizedBox(height: 16),
         SizedBox(
-          height: 180,
+          height: 200,
           child: PageView.builder(
-            controller: PageController(viewportFraction: 0.9),
+            controller: PageController(viewportFraction: 0.85),
             onPageChanged: (index) {
               setState(() {
                 _currentCarouselIndex = index % _recentPlaces.length;
@@ -951,6 +960,7 @@ Future<void> _loadData() async {
             itemCount: _recentPlaces.length * 100, // 무한 스크롤 효과
           ),
         ),
+        const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(
@@ -958,31 +968,31 @@ Future<void> _loadData() async {
                 (index) => Container(
               width: 8,
               height: 8,
-              margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              margin: const EdgeInsets.symmetric(horizontal: 4),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: _currentCarouselIndex == index
-                    ? Theme.of(context).primaryColor
-                    : Colors.grey.withOpacity(0.3),
+                    ? Colors.black
+                    : Colors.grey[300],
               ),
             ),
           ),
         ),
+        const SizedBox(height: 32),
       ],
     );
   }
 
   Widget _buildPlaceCard(VisitHistory place) {
     return Container(
-      width: 300,
-      margin: const EdgeInsets.only(right: 16, left: 4),
+      margin: const EdgeInsets.only(right: 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
@@ -991,26 +1001,26 @@ Future<void> _loadData() async {
         onTap: () {
           // 장소 상세 정보 또는 내비게이션 화면으로 이동
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              height: 100,
+              height: 120,
               decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                color: Colors.grey[200],
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               ),
               child: Center(
                 child: Icon(
                   _getCategoryIcon(place.category),
                   size: 40,
-                  color: Colors.white,
+                  color: Colors.black54,
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1026,14 +1036,14 @@ Future<void> _loadData() async {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(Icons.category, size: 12, color: Colors.grey[600]),
+                      Icon(Icons.category, size: 14, color: Colors.grey[600]),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           place.category,
                           style: TextStyle(
                             color: Colors.grey[600],
-                            fontSize: 12,
+                            fontSize: 14,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1041,16 +1051,16 @@ Future<void> _loadData() async {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(Icons.access_time, size: 12, color: Colors.grey[600]),
+                      Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
                       const SizedBox(width: 4),
                       Text(
                         _formatDate(place.visitDate),
                         style: TextStyle(
                           color: Colors.grey[600],
-                          fontSize: 12,
+                          fontSize: 14,
                         ),
                       ),
                     ],
@@ -1069,52 +1079,56 @@ Future<void> _loadData() async {
       return Container(); // 추천 장소가 없으면 표시하지 않음
     }
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                '추천 장소',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              '추천 장소',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const HistoryBasedRecommendationsScreen(),
+                  ),
+                );
+              },
+              child: const Text(
+                '더보기',
                 style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              TextButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const HistoryBasedRecommendationsScreen(),
-                    ),
-                  );
-                },
-                child: const Text('더보기'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1.5,
             ),
-            itemCount: _recommendedPlaces.length,
-            itemBuilder: (context, index) {
-              final place = _recommendedPlaces[index];
-              return _buildRecommendedPlaceCard(place);
-            },
+          ],
+        ),
+        const SizedBox(height: 16),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 1.3,
           ),
-        ],
-      ),
+          itemCount: _recommendedPlaces.length,
+          itemBuilder: (context, index) {
+            final place = _recommendedPlaces[index];
+            return _buildRecommendedPlaceCard(place);
+          },
+        ),
+        const SizedBox(height: 32),
+      ],
     );
   }
 
@@ -1122,11 +1136,11 @@ Future<void> _loadData() async {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
@@ -1136,27 +1150,27 @@ Future<void> _loadData() async {
           // 장소 상세 정보 또는 내비게이션 화면으로 이동
           _navigateToPlaceDetails(place);
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  color: Colors.grey[200],
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                 ),
                 child: Center(
                   child: Icon(
                     _getCategoryIcon(place.category),
-                    size: 30,
-                    color: Colors.white,
+                    size: 32,
+                    color: Colors.black54,
                   ),
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1169,6 +1183,7 @@ Future<void> _loadData() async {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 4),
                   Text(
                     place.category,
                     style: TextStyle(
@@ -1192,28 +1207,26 @@ Future<void> _loadData() async {
       return Container(); // 인기 카테고리가 없으면 표시하지 않음
     }
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '자주 방문하는 카테고리',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '자주 방문하는 카테고리',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
           ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: _popularCategories.map((category) =>
-                _buildCategoryChip(category)
-            ).toList(),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: _popularCategories.map((category) =>
+              _buildCategoryChip(category)
+          ).toList(),
+        ),
+        const SizedBox(height: 32),
+      ],
     );
   }
 
@@ -1221,17 +1234,32 @@ Future<void> _loadData() async {
     return InkWell(
       onTap: () => _navigateToCategoryPlaces(category),
       borderRadius: BorderRadius.circular(20),
-      child: Chip(
-        avatar: CircleAvatar(
-          backgroundColor: Colors.white,
-          child: Icon(
-            _getCategoryIcon(category),
-            size: 16,
-            color: Theme.of(context).primaryColor,
-          ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.grey[300]!),
         ),
-        label: Text(category),
-        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _getCategoryIcon(category),
+              size: 18,
+              color: Colors.black87,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              category,
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1252,18 +1280,23 @@ Future<void> _loadData() async {
           ),
           builder: (context) {
             return Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      CircleAvatar(
-                        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         child: Icon(
                           _getCategoryIcon(place.category),
-                          color: Theme.of(context).primaryColor,
+                          color: Colors.black87,
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -1297,10 +1330,10 @@ Future<void> _loadData() async {
                   if (place.reasonForRecommendation.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         children: [
@@ -1322,21 +1355,43 @@ Future<void> _loadData() async {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          // 방문 기록에 추가 (향후 구현)
-                        },
-                        icon: const Icon(Icons.bookmark_border),
-                        label: const Text('저장'),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            // 방문 기록에 추가 (향후 구현)
+                          },
+                          icon: const Icon(Icons.bookmark_border),
+                          label: const Text('저장'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.black,
+                            side: const BorderSide(color: Colors.black),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
                       ),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          // 내비게이션 화면으로 이동 (향후 구현)
-                        },
-                        icon: const Icon(Icons.directions),
-                        label: const Text('길찾기'),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            // 내비게이션 화면으로 이동 (향후 구현)
+                          },
+                          icon: const Icon(Icons.directions),
+                          label: const Text('길찾기'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
                       ),
                     ],
                   ),

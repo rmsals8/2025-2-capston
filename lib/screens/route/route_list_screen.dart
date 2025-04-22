@@ -146,25 +146,51 @@ class _RouteListScreenState extends State<RouteListScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
             Text(
               '${segment.startLocation}에서\n${segment.endLocation}까지',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: Colors.black,
+              ),
             ),
             const SizedBox(height: 16),
-            Text('거리: ${segment.distance.toStringAsFixed(1)}km'),
+            Text(
+              '거리: ${segment.distance.toStringAsFixed(1)}km',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+            ),
             const SizedBox(height: 24),
             const Text(
               '이동 수단 선택',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.black,
+              ),
             ),
             const SizedBox(height: 20),
             Row(
@@ -199,11 +225,25 @@ class _RouteListScreenState extends State<RouteListScreen> {
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: SizedBox(
                 width: double.infinity,
-                child: OutlinedButton(
+                height: 56,
+                child: TextButton(
                   onPressed: () {
                     _showNearbyPlaces(context, startLat, startLon, endLat, endLon);
                   },
-                  child: const Text('경로 주변 장소 추천'),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.grey[100],
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text(
+                    '경로 주변 장소 추천',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -350,15 +390,22 @@ class _RouteListScreenState extends State<RouteListScreen> {
       onTap: onTap,
       child: Column(
         children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: color.withOpacity(0.2),
-            child: Icon(icon, color: color, size: 28),
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 32),
           ),
           const SizedBox(height: 8),
           Text(
             label,
-            style: const TextStyle(fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
           ),
         ],
       ),
@@ -392,8 +439,19 @@ class _RouteListScreenState extends State<RouteListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('추천 경로'),
+        title: const Text(
+          '추천 경로',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
         actions: [
           // 방문 기록 보기 버튼
           IconButton(
@@ -426,10 +484,31 @@ class _RouteListScreenState extends State<RouteListScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(routeProvider.error!),
+                  Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+                  const SizedBox(height: 16),
+                  Text(
+                    routeProvider.error!,
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: routeProvider.clearError,
-                    child: const Text('다시 시도'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      '다시 시도',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -472,12 +551,20 @@ class _RouteListScreenState extends State<RouteListScreen> {
               Expanded(
                 child: ListView.builder(
                   itemCount: routeProvider.routes.length,
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(24),
                   itemBuilder: (context, index) {
                     final route = routeProvider.routes[index];
-                    return Card(
+                    return Container(
                       margin: const EdgeInsets.only(bottom: 16),
-                      elevation: index == _selectedRouteIndex ? 4 : 1,
+                      decoration: BoxDecoration(
+                        color: index == _selectedRouteIndex
+                            ? Colors.black.withOpacity(0.05)
+                            : Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                        border: index == _selectedRouteIndex
+                            ? Border.all(color: Colors.black, width: 1.5)
+                            : null,
+                      ),
                       child: InkWell(
                         onTap: () {
                           setState(() {
@@ -487,6 +574,7 @@ class _RouteListScreenState extends State<RouteListScreen> {
                           // 경로 선택 시 해당 경로 강조
                           _updateRouteHighlight(routeProvider.routes, index);
                         },
+                        borderRadius: BorderRadius.circular(8),
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
@@ -494,9 +582,22 @@ class _RouteListScreenState extends State<RouteListScreen> {
                             children: [
                               Row(
                                 children: [
-                                  CircleAvatar(
-                                    backgroundColor: Colors.blue,
-                                    child: Text('${index + 1}'),
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${index + 1}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                   const SizedBox(width: 16),
                                   Expanded(
@@ -507,7 +608,8 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                           '${route.segments.first.startLocation} → ${route.segments.last.endLocation}',
                                           style: const TextStyle(
                                             fontSize: 16,
-                                            fontWeight: FontWeight.bold,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black,
                                           ),
                                         ),
                                         const SizedBox(height: 4),
@@ -538,14 +640,28 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
                                   // 경로 주변 장소 추천 버튼
-                                  TextButton.icon(
+                                  TextButton(
                                     onPressed: () {
                                       if (route.segments.isNotEmpty) {
                                         _showPlacesAlongRoute(context, route);
                                       }
                                     },
-                                    icon: const Icon(Icons.place, size: 18),
-                                    label: const Text('주변 장소'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.black,
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.place, size: 18),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          '주변 장소',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                   const SizedBox(width: 8),
                                   // 내비게이션 시작 버튼
@@ -566,7 +682,25 @@ class _RouteListScreenState extends State<RouteListScreen> {
                                       }
                                     },
                                     icon: const Icon(Icons.navigation, size: 18),
-                                    label: const Text('길안내'),
+                                    label: const Text(
+                                      '길안내',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.black,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                      elevation: 0,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -629,15 +763,27 @@ class _RouteListScreenState extends State<RouteListScreen> {
         context: context,
         barrierDismissible: false,
         builder: (BuildContext context) {
-          return const Dialog(
+          return Dialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Padding(
-              padding: EdgeInsets.all(20.0),
+              padding: const EdgeInsets.all(20.0),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(width: 20),
-                  Text("경로 주변 장소를 검색 중입니다..."),
+                  const CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                  ),
+                  const SizedBox(width: 20),
+                  const Text(
+                    "경로 주변 장소를 검색 중입니다...",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),

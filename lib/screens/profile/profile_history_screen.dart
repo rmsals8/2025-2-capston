@@ -26,7 +26,7 @@ class ProfileHistoryScreen extends StatefulWidget {
 class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
   final VisitHistoryService _historyService = VisitHistoryService();
   final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8080/api/v1';
-  // 상태 변수
+  
   bool _isLoading = true;
   List<VisitHistory> _recentHistories = [];
   Map<String, int> _categoryCounts = {};
@@ -43,13 +43,9 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
     });
 
     try {
-      // 사용자 정보 조회 (백엔드에서) - 명시적으로 먼저 호출
       Map<String, String> userInfo = await _fetchUserInfoFromBackend();
-
-      // 받아온 사용자 정보 출력하여 확인
       print('백엔드에서 가져온 사용자 정보: $userInfo');
 
-      // SharedPreferences에 백엔드 정보 저장 (추가)
       final prefs = await SharedPreferences.getInstance();
       if (userInfo['name'] != null && userInfo['name']!.isNotEmpty) {
         await prefs.setString('user_name', userInfo['name']!);
@@ -58,10 +54,7 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
         await prefs.setString('user_email', userInfo['email']!);
       }
 
-      // 최근 방문 기록 5개만 로드
       _recentHistories = await _historyService.getRecentlyVisitedPlaces(limit: 5);
-
-      // 모든 방문 기록을 로드하여 카테고리 통계 계산
       final allHistories = await _historyService.getVisitHistories();
 
       _categoryCounts = {};
@@ -78,14 +71,26 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       }
     }
   }
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('내 프로필'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        toolbarHeight: 80,
+        title: const Text(
+          '내 프로필',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: Colors.black,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.settings, color: Colors.black),
             onPressed: () {
               Navigator.push(
                 context,
@@ -96,9 +101,10 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Colors.black))
           : RefreshIndicator(
         onRefresh: _loadData,
+        color: Colors.black,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
@@ -118,102 +124,112 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
   }
 
   Widget _buildProfileCard() {
-    return Card(
+    return Container(
       margin: const EdgeInsets.all(16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 40,
-              backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
-              child: Icon(
-                Icons.person,
-                size: 40,
-                color: Theme.of(context).primaryColor,
-              ),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              shape: BoxShape.circle,
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 사용자 이름 표시 - FutureBuilder 대신 직접 백엔드 조회 사용
-                  FutureBuilder<Map<String, String>>(
-                      future: _fetchUserInfoFromBackend(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return Container(
-                            width: 120,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          );
-                        }
-
-                        final userData = snapshot.data;
-                        final userName = userData?['name'] ?? '사용자';
-                        print('백엔드에서 직접 가져온 사용자 이름: $userName');
-
-                        return Text(
-                          userName,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+            child: const Icon(
+              Icons.person,
+              size: 40,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FutureBuilder<Map<String, String>>(
+                    future: _fetchUserInfoFromBackend(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Container(
+                          width: 120,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(4),
                           ),
                         );
                       }
-                  ),
-                  const SizedBox(height: 4),
 
-                  // 사용자 이메일 표시 - FutureBuilder 대신 직접 백엔드 조회 사용
-                  FutureBuilder<Map<String, String>>(
-                      future: _fetchUserInfoFromBackend(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return Container(
-                            width: 180,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          );
-                        }
-
-                        final userData = snapshot.data;
-                        final userEmail = userData?['email'] ?? 'user@example.com';
-                        print('백엔드에서 직접 가져온 사용자 이메일: $userEmail');
-
-                        return Text(
-                          userEmail,
-                          style: TextStyle(
-                            color: Colors.grey[600],
+                      final userData = snapshot.data;
+                      final userName = userData?['name'] ?? '사용자';
+                      return Text(
+                        userName,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      );
+                    }
+                ),
+                const SizedBox(height: 4),
+                FutureBuilder<Map<String, String>>(
+                    future: _fetchUserInfoFromBackend(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Container(
+                          width: 180,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(4),
                           ),
                         );
                       }
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton(
+
+                      final userData = snapshot.data;
+                      final userEmail = userData?['email'] ?? 'user@example.com';
+                      return Text(
+                        userEmail,
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                        ),
+                      );
+                    }
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 36,
+                  child: OutlinedButton(
                     onPressed: _showLogoutDialog,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.black,
+                      side: const BorderSide(color: Colors.black),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
                     child: const Text('로그아웃'),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+  
   Future<Map<String, String>> _fetchUserInfoFromBackend() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('access_token');
 
-      // 토큰 상세 정보 출력
       print('토큰 전체: $token');
       print('토큰 길이: ${token?.length}');
       print('토큰 시작: ${token?.substring(0, Math.min(20, token?.length ?? 0))}');
@@ -223,9 +239,7 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
         return {'name': '사용자', 'email': 'user@example.com'};
       }
 
-      // Bearer 토큰 형식 확인 및 수정
       final authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
-
       print('API 요청에 사용되는 Authorization 헤더: ${authHeader.substring(0, Math.min(25, authHeader.length))}...');
 
       try {
@@ -249,13 +263,10 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
         } else if (response.statusCode == 401 || response.statusCode == 403) {
           print('인증 오류: 토큰이 만료되었거나 유효하지 않습니다.');
 
-          // 토큰 만료 시 로컬에 저장된 사용자 정보 반환
           final name = prefs.getString('user_name');
           final email = prefs.getString('user_email');
 
           print('로컬 저장소에서 가져온 사용자 정보: $name, $email');
-
-          // RefreshToken 처리 로직 추가할 수 있음
 
           return {
             'name': name ?? '사용자',
@@ -267,7 +278,6 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
         }
       } catch (e) {
         print('HTTP 요청 오류: $e');
-        // 로컬에 저장된 사용자 정보 반환
         final name = prefs.getString('user_name');
         final email = prefs.getString('user_email');
 
@@ -282,7 +292,6 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
     }
   }
 
-// 로컬 저장소에서 사용자 정보 가져오기
   Future<Map<String, String>> _getUserInfoFromLocalPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final userName = prefs.getString('user_name');
@@ -295,17 +304,14 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       'email': userEmail ?? 'user@example.com'
     };
   }
+  
   Future<String?> _getUserEmail() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-
-      // 저장된 사용자 이메일 가져오기
       String? userEmail = prefs.getString('user_email');
       print('SharedPreferences에서 가져온 사용자 이메일: $userEmail');
 
-      // 이메일이 없으면 기본값 반환
       if (userEmail == null || userEmail.isEmpty) {
-        // 백엔드에서 정보 가져오기 시도
         final userInfo = await _fetchUserInfoFromBackend();
         return userInfo['email'];
       }
@@ -316,17 +322,14 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       return 'user@example.com';
     }
   }
+  
   Future<String?> _getUserName() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-
-      // 저장된 사용자 이름 가져오기
       String? userName = prefs.getString('user_name');
       print('SharedPreferences에서 가져온 사용자 이름: $userName');
 
-      // 이름이 없으면 기본값 반환
       if (userName == null || userName.isEmpty) {
-        // 백엔드에서 정보 가져오기 시도
         final userInfo = await _fetchUserInfoFromBackend();
         return userInfo['name'];
       }
@@ -338,20 +341,14 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
     }
   }
 
-
   Future<String?> _getUserId() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-
-      // Attempt to get user ID from preferences
       String? userId = prefs.getString('user_id');
 
-      // If user ID is not available, try to extract from token
       if (userId == null || userId.isEmpty) {
         final token = prefs.getString('access_token');
         if (token != null && token.isNotEmpty) {
-          // In a real app, you might extract user ID from JWT token
-          // Here we'll just use part of the token as a demo
           if (token.length > 10) {
             userId = 'user_${token.substring(0, 8)}';
           }
@@ -364,49 +361,52 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       return null;
     }
   }
+  
   Widget _buildStatisticsCard() {
-    // 방문 통계
     final visitCount = _recentHistories.length;
     final categoryCount = _categoryCounts.length;
     final thisMonthCount = _getMonthlyVisitCount();
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '방문 통계',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '방문 통계',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildStatItem(
+                icon: Icons.place,
+                value: '$visitCount',
+                label: '총 방문 장소',
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem(
-                  icon: Icons.place,
-                  value: '$visitCount',
-                  label: '총 방문 장소',
-                ),
-                _buildStatItem(
-                  icon: Icons.category,
-                  value: '$categoryCount',
-                  label: '방문 카테고리',
-                ),
-                _buildStatItem(
-                  icon: Icons.calendar_today,
-                  value: '$thisMonthCount',
-                  label: '이번 달 방문',
-                ),
-              ],
-            ),
-          ],
-        ),
+              _buildStatItem(
+                icon: Icons.category,
+                value: '$categoryCount',
+                label: '방문 카테고리',
+              ),
+              _buildStatItem(
+                icon: Icons.calendar_today,
+                value: '$thisMonthCount',
+                label: '이번 달 방문',
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -418,13 +418,20 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
   }) {
     return Column(
       children: [
-        Icon(icon, color: Theme.of(context).primaryColor),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: Colors.white),
+        ),
         const SizedBox(height: 8),
         Text(
           value,
           style: const TextStyle(
             fontSize: 24,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w800,
           ),
         ),
         const SizedBox(height: 4),
@@ -456,7 +463,7 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
                 '최근 방문',
                 style: TextStyle(
                   fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
               TextButton(
@@ -468,7 +475,13 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
                     ),
                   );
                 },
-                child: const Text('전체보기'),
+                child: const Text(
+                  '전체보기',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ),
@@ -480,26 +493,37 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           itemBuilder: (context, index) {
             final history = _recentHistories[index];
-            return Card(
+            return Container(
               margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
               child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
+                leading: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: Icon(
                     _getCategoryIcon(history.category),
-                    color: Theme.of(context).primaryColor,
+                    color: Colors.black87,
                   ),
                 ),
                 title: Text(
                   history.placeName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 subtitle: Text(
                   '${history.category} • ${_formatDate(history.visitDate)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.grey[600]),
                 ),
                 onTap: () {
                   // 방문 기록 상세 정보 표시 (향후 구현)
@@ -517,11 +541,9 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       return const SizedBox.shrink();
     }
 
-    // 카테고리별로 정렬
     final sortedCategories = _categoryCounts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    // 최대값 계산
     final maxCount = sortedCategories.isNotEmpty
         ? sortedCategories.first.value.toDouble()
         : 1.0;
@@ -535,23 +557,26 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
             '카테고리별 방문',
             style: TextStyle(
               fontSize: 18,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: sortedCategories
-                    .take(5) // 상위 5개만 표시
-                    .map((entry) => _buildCategoryBar(
-                  category: entry.key,
-                  count: entry.value,
-                  maxCount: maxCount,
-                ))
-                    .toList(),
-              ),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Column(
+              children: sortedCategories
+                  .take(5)
+                  .map((entry) => _buildCategoryBar(
+                category: entry.key,
+                count: entry.value,
+                maxCount: maxCount,
+              ))
+                  .toList(),
             ),
           ),
         ],
@@ -582,7 +607,6 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
           Expanded(
             child: Stack(
               children: [
-                // 배경 바
                 Container(
                   height: 16,
                   decoration: BoxDecoration(
@@ -590,13 +614,12 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                // 진행 바
                 FractionallySizedBox(
                   widthFactor: percentage,
                   child: Container(
                     height: 16,
                     decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor,
+                      color: Colors.black,
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
@@ -610,7 +633,7 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
             child: Text(
               count.toString(),
               style: const TextStyle(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w800,
               ),
               textAlign: TextAlign.right,
             ),
@@ -627,7 +650,7 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
         children: [
           SizedBox(
             width: double.infinity,
-            height: 48,
+            height: 56,
             child: ElevatedButton.icon(
               onPressed: () {
                 Navigator.push(
@@ -637,25 +660,28 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
                   ),
                 );
               },
-              icon: const Icon(Icons.recommend, color: Colors.yellow), // 아이콘 색상 변경
+              icon: const Icon(Icons.recommend),
               label: const Text(
                 '맞춤 추천 장소',
                 style: TextStyle(
-                  color: Colors.yellow, // 텍스트 색상을 노란색으로 변경
                   fontSize: 16,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple, // 배경색은 보라색 유지
-                foregroundColor: Colors.yellow, // 전체 텍스트/아이콘 색상을 노란색으로 변경
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
               ),
             ),
           ),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            height: 48,
+            height: 56,
             child: OutlinedButton.icon(
               onPressed: () {
                 Navigator.push(
@@ -666,23 +692,47 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
                 );
               },
               icon: const Icon(Icons.history),
-              label: const Text('방문 기록 관리'),
+              label: const Text(
+                '방문 기록 관리',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.black,
+                side: const BorderSide(color: Colors.black),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
             ),
           ),
         ],
       ),
     );
   }
+  
   Future<void> _showLogoutDialog() async {
     return showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('로그아웃'),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text(
+          '로그아웃',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         content: const Text('정말 로그아웃 하시겠습니까?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('취소'),
+            child: const Text(
+              '취소',
+              style: TextStyle(color: Colors.black),
+            ),
           ),
           TextButton(
             onPressed: () {
