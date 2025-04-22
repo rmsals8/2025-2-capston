@@ -108,7 +108,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                
+
                 // 장소명 입력
                 Container(
                   decoration: BoxDecoration(
@@ -125,11 +125,11 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                       contentPadding: const EdgeInsets.all(16),
                     ),
                     validator: (value) =>
-                        value?.isEmpty ?? true ? '장소명을 입력하세요' : null,
+                    value?.isEmpty ?? true ? '장소명을 입력하세요' : null,
                   ),
                 ),
                 const SizedBox(height: 16),
-                
+
                 // 위치 상세 입력
                 Container(
                   decoration: BoxDecoration(
@@ -173,10 +173,10 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                     ),
                     readOnly: true,
                     validator: (value) =>
-                        _type == 'FIXED' && (value?.isEmpty ?? true) ? '위치를 입력하세요' : null,
+                    _type == 'FIXED' && (value?.isEmpty ?? true) ? '위치를 입력하세요' : null,
                   ),
                 ),
-                
+
                 // 고정 일정일 때 시작 시간
                 if (_type == 'FIXED') ...[
                   const SizedBox(height: 24),
@@ -218,7 +218,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                     ),
                   ),
                 ],
-                
+
                 // 유연한 일정일 때 우선순위
                 if (_type == 'FLEXIBLE') ...[
                   const SizedBox(height: 24),
@@ -264,7 +264,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                     ),
                   ),
                 ],
-                
+
                 // 예상 소요시간
                 const SizedBox(height: 24),
                 Container(
@@ -293,10 +293,22 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
-                        items: [30, 60, 90, 120, 180].map((int value) {
+                        items: [15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360].map((int value) {
+                          String displayText;
+                          if (value < 60) {
+                            displayText = '$value분';
+                          } else {
+                            int hours = value ~/ 60;
+                            int minutes = value % 60;
+                            if (minutes == 0) {
+                              displayText = '$hours시간';
+                            } else {
+                              displayText = '$hours시간 $minutes분';
+                            }
+                          }
                           return DropdownMenuItem<int>(
                             value: value,
-                            child: Text('${value}분'),
+                            child: Text(displayText),
                           );
                         }).toList(),
                         onChanged: (value) {
@@ -308,7 +320,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                     ],
                   ),
                 ),
-                
+
                 // 일정 추가 버튼
                 const SizedBox(height: 32),
                 SizedBox(
@@ -333,7 +345,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                     ),
                   ),
                 ),
-                
+
                 // 추가된 일정 목록
                 if (_schedules.isNotEmpty) ...[
                   const SizedBox(height: 32),
@@ -367,7 +379,9 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                             ),
                           ),
                           subtitle: Text(
-                            '${schedule['type']} - ${schedule['type'] == 'FLEXIBLE' ? '유연한 일정' : schedule['location']}',
+                            schedule['type'] == 'FLEXIBLE'
+                                ? '유연한 일정 - ${schedule['location'] ?? "위치 미정"}'
+                                : '고정 일정 - ${_formatFullDateTime(DateTime.parse(schedule['startTime']))} ~ ${_formatEndTime(DateTime.parse(schedule['endTime']))} • ${schedule['location']}',
                             style: TextStyle(
                               color: Colors.grey[600],
                               fontSize: 14,
@@ -386,7 +400,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                     },
                   ),
                 ],
-                
+
                 // 전체 일정 저장 버튼
                 const SizedBox(height: 24),
                 SizedBox(
@@ -525,7 +539,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
       });
     }
   }
-  
+
   Future<void> _submitSchedules() async {
     if (_schedules.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -599,5 +613,13 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
 
   String _formatDateTime(DateTime dateTime) {
     return '${dateTime.month}/${dateTime.day} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatFullDateTime(DateTime dateTime) {
+    return '${dateTime.year}년 ${dateTime.month}월 ${dateTime.day}일 ${dateTime.hour}시 ${dateTime.minute}분';
+  }
+
+  String _formatEndTime(DateTime dateTime) {
+    return '${dateTime.hour}시 ${dateTime.minute}분';
   }
 }

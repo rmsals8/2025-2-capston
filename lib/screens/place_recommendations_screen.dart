@@ -31,6 +31,8 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
   List<RecommendedPlace> _recommendations = [];
   bool _isLoading = true;
   String? _errorMessage;
+  final Set<String> _savedPlaceIds = {}; // 저장된 장소 ID를 추적
+  final Map<String, String> _placeIdToVisitHistoryId = {}; // place_id를 visit_history_id에 매핑
 
   // 카테고리 목록
   final List<String> _categories = [
@@ -47,6 +49,22 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
   void initState() {
     super.initState();
     _loadRecommendations();
+    _loadSavedPlaces(); // 저장된 장소 목록 로드
+  }
+
+  Future<void> _loadSavedPlaces() async {
+    try {
+      final visitHistoryService = VisitHistoryService();
+      final savedPlaces = await visitHistoryService.getVisitHistories();
+      setState(() {
+        for (var place in savedPlaces) {
+          _savedPlaceIds.add(place.placeId);
+          _placeIdToVisitHistoryId[place.placeId] = place.id;
+        }
+      });
+    } catch (e) {
+      print('저장된 장소 로드 실패: $e');
+    }
   }
 
   Future<void> _loadRecommendations() async {
@@ -384,30 +402,71 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                   // 저장 버튼
                   TextButton.icon(
                     onPressed: () async {
-                      try {
-                        final visitHistoryService = VisitHistoryService();
-                        await visitHistoryService.addVisitHistory(
-                            place.name,
-                            place.id,
-                            place.category,
-                            place.latitude,
-                            place.longitude,
-                            place.address
-                        );
+                      if (_savedPlaceIds.contains(place.id)) {
+                        // 저장 취소 로직
+                        try {
+                          final visitHistoryService = VisitHistoryService();
+                          final visitHistoryId = _placeIdToVisitHistoryId[place.id];
 
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('방문 장소로 저장되었습니다')),
-                        );
-                      } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('저장 실패: $e')),
-                        );
+                          if (visitHistoryId != null) {
+                            await visitHistoryService.deleteVisitHistory(visitHistoryId);
+
+                            setState(() {
+                              _savedPlaceIds.remove(place.id);
+                              _placeIdToVisitHistoryId.remove(place.id);
+                            });
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('저장이 취소되었습니다')),
+                            );
+                          }
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('저장 취소 실패: $e')),
+                          );
+                        }
+                      } else {
+                        // 저장 로직
+                        try {
+                          final visitHistoryService = VisitHistoryService();
+                          await visitHistoryService.addVisitHistory(
+                              place.name,
+                              place.id,
+                              place.category,
+                              place.latitude,
+                              place.longitude,
+                              place.address
+                          );
+
+                          // 저장 후 새로 추가된 visit history를 가져와서 ID를 매핑
+                          final savedPlaces = await visitHistoryService.getVisitHistories();
+                          final newlySavedPlace = savedPlaces.firstWhere(
+                                (history) => history.placeId == place.id,
+                            orElse: () => throw Exception('저장된 장소를 찾을 수 없습니다'),
+                          );
+
+                          setState(() {
+                            _savedPlaceIds.add(place.id);
+                            _placeIdToVisitHistoryId[place.id] = newlySavedPlace.id;
+                          });
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('방문 장소로 저장되었습니다')),
+                          );
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('저장 실패: $e')),
+                          );
+                        }
                       }
                     },
-                    icon: const Icon(Icons.bookmark_border, size: 18),
-                    label: const Text(
-                      '저장',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                    icon: Icon(
+                      _savedPlaceIds.contains(place.id) ? Icons.bookmark : Icons.bookmark_border,
+                      size: 18,
+                    ),
+                    label: Text(
+                      _savedPlaceIds.contains(place.id) ? '저장됨' : '저장',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.black,
@@ -614,16 +673,75 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
 
                       // 저장 버튼
                       OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('방문 장소로 저장되었습니다')),
-                          );
+                        onPressed: () async {
+                          if (_savedPlaceIds.contains(place.id)) {
+                            // 저장 취소 로직
+                            try {
+                              final visitHistoryService = VisitHistoryService();
+                              final visitHistoryId = _placeIdToVisitHistoryId[place.id];
+
+                              if (visitHistoryId != null) {
+                                await visitHistoryService.deleteVisitHistory(visitHistoryId);
+
+                                setState(() {
+                                  _savedPlaceIds.remove(place.id);
+                                  _placeIdToVisitHistoryId.remove(place.id);
+                                });
+
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('저장이 취소되었습니다')),
+                                );
+                              }
+                            } catch (e) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('저장 취소 실패: $e')),
+                              );
+                            }
+                          } else {
+                            // 저장 로직
+                            try {
+                              final visitHistoryService = VisitHistoryService();
+                              await visitHistoryService.addVisitHistory(
+                                  place.name,
+                                  place.id,
+                                  place.category,
+                                  place.latitude,
+                                  place.longitude,
+                                  place.address
+                              );
+
+                              // 저장 후 새로 추가된 visit history를 가져와서 ID를 매핑
+                              final savedPlaces = await visitHistoryService.getVisitHistories();
+                              final newlySavedPlace = savedPlaces.firstWhere(
+                                    (history) => history.placeId == place.id,
+                                orElse: () => throw Exception('저장된 장소를 찾을 수 없습니다'),
+                              );
+
+                              setState(() {
+                                _savedPlaceIds.add(place.id);
+                                _placeIdToVisitHistoryId[place.id] = newlySavedPlace.id;
+                              });
+
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('방문 장소로 저장되었습니다')),
+                              );
+                            } catch (e) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('저장 실패: $e')),
+                              );
+                            }
+                          }
                         },
-                        icon: const Icon(Icons.bookmark_border),
-                        label: const Text(
-                          '저장',
-                          style: TextStyle(
+                        icon: Icon(
+                          _savedPlaceIds.contains(place.id) ? Icons.bookmark : Icons.bookmark_border,
+                        ),
+                        label: Text(
+                          _savedPlaceIds.contains(place.id) ? '저장됨' : '저장',
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                           ),
