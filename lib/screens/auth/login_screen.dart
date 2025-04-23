@@ -10,6 +10,7 @@ import 'package:trip_helper/widgets/auth/kakao_image_button.dart';
 import '../../widgets/auth/modern_social_login_button.dart';
 import '../../widgets/auth/naver_image_button.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback? onRegisterTap;
@@ -32,7 +33,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _autoLogin = false;
   bool _obscurePassword = true;
   bool _isLoading = false;
-  final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8080/api/v1';
+  final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8081/api/v1';
 
   @override
   void dispose() {
@@ -274,53 +275,71 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleLogin() async {
-    if (_formKey.currentState?.validate() ?? false) {
-      setState(() {
-        _isLoading = true;
-      });
+  if (_formKey.currentState?.validate() ?? false) {
+    setState(() {
+      _isLoading = true;
+    });
 
-      try {
-        final response = await http.post(
-          Uri.parse('$baseUrl/auth/login'),
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode({
-            'email': _emailController.text,
-            'password': _passwordController.text,
-          }),
-        );
+    // 웹 환경과 모바일 환경에 따라 다른 URL 사용
+    final apiUrl = kIsWeb 
+        ? 'http://localhost:8081/api/v1/auth/login' 
+        : '$baseUrl/auth/login';
+    
+    print('사용 중인 API URL: $apiUrl');
+    print('요청 데이터: ${json.encode({
+      'email': _emailController.text,
+      'password': _passwordController.text,
+    })}');
 
-        if (response.statusCode == 200) {
-          final authResponse = json.decode(response.body);
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('access_token', authResponse['accessToken']);
-          await prefs.setString('refresh_token', authResponse['refreshToken']);
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'email': _emailController.text,
+          'password': _passwordController.text,
+        }),
+      );
 
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const MainNavigation()),
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('로그인에 실패했습니다.')),
-            );
-          }
-        }
-      } catch (e) {
+      print('응답 상태 코드: ${response.statusCode}');
+      print('응답 헤더: ${response.headers}');
+      print('응답 본문: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final authResponse = json.decode(response.body);
+        print('파싱된 응답: $authResponse');
+        
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('access_token', authResponse['accessToken']);
+        await prefs.setString('refresh_token', authResponse['refreshToken']);
+
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('오류가 발생했습니다.')),
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const MainNavigation()),
           );
         }
-      } finally {
+      } else {
         if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('로그인 실패: 상태 코드 ${response.statusCode}, 메시지: ${response.body}')),
+          );
         }
+      }
+    } catch (e) {
+      print('로그인 요청 중 오류 발생: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('네트워크 오류: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }
+}
 }
