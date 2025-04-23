@@ -87,12 +87,12 @@ class _SavedScheduleListScreenState extends State<SavedScheduleListScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.black))
           : RefreshIndicator(
-              onRefresh: _loadSavedSchedules,
-              color: Colors.black,
-              child: _savedSchedules.isEmpty
-                  ? _buildEmptyState()
-                  : _buildScheduleList(),
-            ),
+        onRefresh: _loadSavedSchedules,
+        color: Colors.black,
+        child: _savedSchedules.isEmpty
+            ? _buildEmptyState()
+            : _buildScheduleList(),
+      ),
     );
   }
 
@@ -160,13 +160,13 @@ class _SavedScheduleListScreenState extends State<SavedScheduleListScreen> {
     // 날짜 포맷 변환
     String createdAt = '날짜 정보 없음';
     String expiresAt = '만료일 정보 없음';
-    
+
     try {
       if (schedule['createdAt'] != null) {
         final created = DateTime.parse(schedule['createdAt']);
         createdAt = DateFormat('yyyy년 MM월 dd일').format(created);
       }
-      
+
       if (schedule['expirationDate'] != null) {
         final expires = DateTime.parse(schedule['expirationDate']);
         expiresAt = DateFormat('yyyy년 MM월 dd일').format(expires);

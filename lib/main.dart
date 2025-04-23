@@ -56,7 +56,7 @@ void main() async {
     final navigationService = NavigationService();
     final authProvider = AuthProvider();
     final locationProvider = LocationProvider();
-    final scheduleProvider = ScheduleProvider();
+    final scheduleProvider = ScheduleProvider(authProvider: authProvider);
     final routeProvider = RouteProvider();
     final navigationProvider = NavigationProvider();
     final visitHistoryService = VisitHistoryService();  // 추가: 방문 기록 서비스
@@ -80,6 +80,7 @@ void main() async {
   } catch (e) {
     print('Initialization error: $e');
     // 에러가 발생해도 기본 Provider들은 제공
+    var authProvider;
     runApp(
       MultiProvider(
         providers: [
@@ -88,7 +89,7 @@ void main() async {
           Provider<PlaceRecommendationService>(create: (_) => PlaceRecommendationService()),  // 추가
           ChangeNotifierProvider<AuthProvider>(create: (_) => AuthProvider()),
           ChangeNotifierProvider<LocationProvider>(create: (_) => LocationProvider()),
-          ChangeNotifierProvider<ScheduleProvider>(create: (_) => ScheduleProvider()),
+          ChangeNotifierProvider<ScheduleProvider>(create: (_) => ScheduleProvider(authProvider: authProvider)),
           ChangeNotifierProvider<RouteProvider>(create: (_) => RouteProvider()),
           ChangeNotifierProvider<NavigationProvider>(
             create: (context) => NavigationProvider(),

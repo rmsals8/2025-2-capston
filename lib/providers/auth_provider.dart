@@ -13,7 +13,15 @@ class AuthProvider with ChangeNotifier {
   AuthProvider() {
     _checkLoginStatus();
   }
+  Future<String?> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('access_token');
 
+    // 토큰이 없는 경우 임시적으로 하드코딩된 토큰 반환 (테스트용)
+
+
+    return token;
+  }
   Future<void> _checkLoginStatus() async {
     final prefs = await SharedPreferences.getInstance();
     _isLoggedIn = prefs.getString('access_token') != null;

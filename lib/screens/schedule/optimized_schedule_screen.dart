@@ -5,6 +5,9 @@ import 'package:trip_helper/providers/schedule_provider.dart';
 import 'package:trip_helper/models/schedule.dart';
 import 'package:trip_helper/screens/route/route_list_screen.dart';
 import 'package:trip_helper/providers/route_provider.dart';
+import 'package:trip_helper/screens/schedule/saved_schedule_list_screen.dart';
+import 'package:trip_helper/services/schedule_save_service.dart';
+import 'package:trip_helper/widgets/save_schedule_dialog.dart';
 import 'dart:math';
 
 class OptimizedScheduleScreen extends StatefulWidget {
@@ -22,6 +25,8 @@ class OptimizedScheduleScreen extends StatefulWidget {
 class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
   // 선택된 대안 옵션 상태 관리
   Map<String, int> selectedAlternatives = {};
+  final ScheduleSaveService _scheduleSaveService = ScheduleSaveService();
+  bool _isSaving = false;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +75,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
               ),
             ),
           ),
-          _buildRouteButton(context, optimizedSchedules),
+          _buildButtonBar(context, optimizedSchedules),
         ],
       ),
     );
@@ -690,7 +695,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
     return null;
   }
 
-  Widget _buildRouteButton(BuildContext context, List<Map<String, dynamic>> schedules) {
+  Widget _buildButtonBar(BuildContext context, List<Map<String, dynamic>> schedules) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -703,96 +708,253 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
           ),
         ],
       ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            elevation: 0,
-          ),
-          onPressed: () async {
-            try {
-              final routeProvider = context.read<RouteProvider>();
-
-              // 좌표 데이터가 포함된 형태로 변환
-              final formattedSchedules = schedules.map((schedule) {
-                // 기본 좌표값
-                double latitude = schedule['latitude'] ?? 0.0;
-                double longitude = schedule['longitude'] ?? 0.0;
-
-                // location 객체에서 좌표 추출
-                if (latitude == 0.0 || longitude == 0.0) {
-                  if (schedule['location'] is Map) {
-                    // Map 형태의 location
-                    latitude = schedule['location']['latitude'] ?? latitude;
-                    longitude = schedule['location']['longitude'] ?? longitude;
-                  } else if (schedule['location'] is String && schedule['location'].toString().startsWith('{')) {
-                    // JSON 문자열 형태의 location
-                    try {
-                      Map<String, dynamic> locationMap = json.decode(schedule['location'].toString());
-                      latitude = locationMap['latitude'] ?? latitude;
-                      longitude = locationMap['longitude'] ?? longitude;
-                    } catch (e) {
-                      print('위치 문자열 파싱 오류: $e');
-                    }
-                  }
-                }
-
-                print('좌표 추출 결과: ${schedule['name']} - lat: $latitude, lng: $longitude');
-
-                return {
-                  'name': schedule['name'] ?? '',
-                  'latitude': latitude,
-                  'longitude': longitude,
-                  'location': schedule['name'] ?? '',  // location은 문자열로 변환
-                  'visitTime': schedule['startTime'] ?? DateTime.now().toIso8601String(),
-                  'duration': schedule['duration'] ?? 60,
-                };
-              }).toList();
-
-              print('Formatted schedules for routes (with extracted coordinates): $formattedSchedules');
-
-              // 경로 생성 요청
-              await routeProvider.getRecommendedRoutes(formattedSchedules);
-
-              if (context.mounted) {
-                if (routeProvider.routes.isNotEmpty) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const RouteListScreen(),
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('경로를 생성할 수 없습니다.')),
-                  );
-                }
-              }
-            } catch (e) {
-              print('Error creating route: $e');
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('경로 생성 중 오류가 발생했습니다: $e')),
-                );
-              }
-            }
-          },
-          child: const Text(
-            '경로 생성',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
+      child: Row(
+        children: [
+          // 저장 버튼
+          Expanded(
+            flex: 1,
+            child: SizedBox(
+              height: 56,
+              child: OutlinedButton.icon(
+                icon: _isSaving
+                    ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.black,
+                  ),
+                )
+                    : const Icon(Icons.save),
+                label: Text(_isSaving ? '저장 중...' : '저장'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.black,
+                  side: const BorderSide(color: Colors.black),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: _isSaving ? null : () => _showSaveDialog(context),
+              ),
             ),
           ),
-        ),
+          const SizedBox(width: 12),
+          // 경로 생성 버튼
+          Expanded(
+            flex: 2,
+            child: SizedBox(
+              height: 56,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.map),
+                label: const Text(
+                  '경로 생성',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                ),
+                onPressed: () => _createRoute(context, schedules),
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  void _showSaveDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return SaveScheduleDialog(
+          onSave: (String name, int days) {
+            _saveSchedule(name, days);
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _saveSchedule(String scheduleName, int expirationDays) async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // 일정 데이터가 올바른 형식인지 확인
+      if (widget.optimizedData['optimizedSchedules'] == null ||
+          widget.optimizedData['optimizedSchedules'].isEmpty) {
+        throw Exception('저장할 일정 데이터가 없습니다.');
+      }
+
+      // 디버깅을 위한 로깅
+      print('일정 저장 시작 - 이름: $scheduleName, 유효기간: $expirationDays일');
+
+      // 백엔드 요청 형식에 맞게 데이터 보완
+      Map<String, dynamic> dataToSave = Map.from(widget.optimizedData);
+
+      // routeSegments가 없는 경우 기본 세그먼트 생성
+      if (dataToSave['routeSegments'] == null || dataToSave['routeSegments'].isEmpty) {
+        dataToSave['routeSegments'] = _generateBasicSegments(dataToSave['optimizedSchedules']);
+      }
+
+      // metrics 정보가 없는 경우 기본값 설정
+      if (dataToSave['metrics'] == null) {
+        dataToSave['metrics'] = {
+          'totalDistance': 0.0,
+          'totalTime': 0,
+          'totalCost': 0.0
+        };
+      }
+
+      final result = await _scheduleSaveService.saveSchedule(
+        scheduleName: scheduleName,
+        expirationDays: expirationDays,
+        optimizedData: dataToSave,
+      );
+
+      if (mounted) {
+        // 성공 메시지 표시
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green[700],
+            content: Text('일정이 저장되었습니다: $scheduleName'),
+            action: SnackBarAction(
+              label: '저장된 일정 보기',
+              textColor: Colors.white,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SavedScheduleListScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // 오류 로그 및 메시지
+      print('일정 저장 중 오류 발생: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red[700],
+            content: Text('일정 저장에 실패했습니다: ${e.toString().replaceAll('Exception: ', '')}'),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+// 기본 경로 세그먼트 생성 (일정 간의 이동 경로)
+  List<Map<String, dynamic>> _generateBasicSegments(List<dynamic> schedules) {
+    List<Map<String, dynamic>> segments = [];
+
+    // 일정이 2개 이상일 때만 세그먼트 생성
+    if (schedules.length < 2) return segments;
+
+    for (int i = 0; i < schedules.length - 1; i++) {
+      final current = schedules[i];
+      final next = schedules[i + 1];
+
+      // 현재 일정과 다음 일정 사이의 세그먼트 생성
+      segments.add({
+        'fromLocation': current['name'] ?? '',
+        'toLocation': next['name'] ?? '',
+        'distance': 0.0,  // 기본값
+        'duration': 30,   // 기본 30분
+        'transportMode': 'WALK'  // 기본 이동 수단
+      });
+    }
+
+    return segments;
+  }
+
+  Future<void> _createRoute(BuildContext context, List<Map<String, dynamic>> schedules) async {
+    try {
+      final routeProvider = context.read<RouteProvider>();
+
+      // 좌표 데이터가 포함된 형태로 변환
+      final formattedSchedules = schedules.map((schedule) {
+        // 기본 좌표값
+        double latitude = schedule['latitude'] ?? 0.0;
+        double longitude = schedule['longitude'] ?? 0.0;
+
+        // location 객체에서 좌표 추출
+        if (latitude == 0.0 || longitude == 0.0) {
+          if (schedule['location'] is Map) {
+            // Map 형태의 location
+            latitude = schedule['location']['latitude'] ?? latitude;
+            longitude = schedule['location']['longitude'] ?? longitude;
+          } else if (schedule['location'] is String && schedule['location'].toString().startsWith('{')) {
+            // JSON 문자열 형태의 location
+            try {
+              Map<String, dynamic> locationMap = json.decode(schedule['location'].toString());
+              latitude = locationMap['latitude'] ?? latitude;
+              longitude = locationMap['longitude'] ?? longitude;
+            } catch (e) {
+              print('위치 문자열 파싱 오류: $e');
+            }
+          }
+        }
+
+        print('좌표 추출 결과: ${schedule['name']} - lat: $latitude, lng: $longitude');
+
+        return {
+          'name': schedule['name'] ?? '',
+          'latitude': latitude,
+          'longitude': longitude,
+          'location': schedule['name'] ?? '',  // location은 문자열로 변환
+          'visitTime': schedule['startTime'] ?? DateTime.now().toIso8601String(),
+          'duration': schedule['duration'] ?? 60,
+        };
+      }).toList();
+
+      print('Formatted schedules for routes (with extracted coordinates): $formattedSchedules');
+
+      // 경로 생성 요청
+      await routeProvider.getRecommendedRoutes(formattedSchedules);
+
+      if (context.mounted) {
+        if (routeProvider.routes.isNotEmpty) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const RouteListScreen(),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('경로를 생성할 수 없습니다.')),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error creating route: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('경로 생성 중 오류가 발생했습니다: $e')),
+        );
+      }
+    }
   }
 
   String _formatDateTime(dynamic dateTime) {
@@ -805,7 +967,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
     }
   }
 
-double _parseCoordinate(dynamic value) {
+  double _parseCoordinate(dynamic value) {
     if (value == null) return 0.0;
 
     // 큰 정수값을 실제 좌표로 변환 (355437482.0 -> 35.5437482)

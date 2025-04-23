@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../../providers/route_provider.dart';
 import '../schedule/add_schedule_screen.dart';
@@ -20,9 +21,10 @@ class _RouteGenerationScreenState extends State<RouteGenerationScreen> {
   
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ScheduleProvider()),
+        ChangeNotifierProvider(create: (_) => ScheduleProvider(authProvider: authProvider)),
         ChangeNotifierProxyProvider<ScheduleProvider, RouteProvider>(
           create: (_) => RouteProvider(),
           update: (_, scheduleProvider, previousRouteProvider) {

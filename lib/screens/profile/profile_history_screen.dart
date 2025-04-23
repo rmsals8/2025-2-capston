@@ -1,20 +1,23 @@
-// lib/screens/profile/profile_history_screen.dart
 import 'dart:convert';
 import 'dart:math' as Math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
 import '../../models/visit_history.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../services/visit_history_service.dart';
+import '../../services/schedule_save_service.dart';
 import '../auth/auth_screen.dart';
 import '../recommendations/history_based_recommendations_screen.dart';
+import '../schedule/saved_schedule_list_screen.dart';
 import 'visit_history_screen.dart';
 import '../settings/settings_screen.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart' ;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ProfileHistoryScreen extends StatefulWidget {
   const ProfileHistoryScreen({Key? key}) : super(key: key);
@@ -25,11 +28,21 @@ class ProfileHistoryScreen extends StatefulWidget {
 
 class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
   final VisitHistoryService _historyService = VisitHistoryService();
-  final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8080/api/v1';
-  
+  final ScheduleSaveService _scheduleSaveService = ScheduleSaveService();
+
+  String get baseUrl {
+    if (kIsWeb) {
+      return dotenv.env['API_V1_URL'] ?? 'http://localhost:8081/api/v1';
+    } else {
+      return dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8081/api/v1';
+    }
+  }
+
   bool _isLoading = true;
   List<VisitHistory> _recentHistories = [];
   Map<String, int> _categoryCounts = {};
+  List<Map<String, dynamic>> _savedSchedules = [];
+  bool _isLoadingSavedSchedules = false;
 
   @override
   void initState() {
@@ -40,6 +53,7 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
   Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
+      _isLoadingSavedSchedules = true;
     });
 
     try {
@@ -54,6 +68,7 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
         await prefs.setString('user_email', userInfo['email']!);
       }
 
+      // 방문 기록 로드
       _recentHistories = await _historyService.getRecentlyVisitedPlaces(limit: 5);
       final allHistories = await _historyService.getVisitHistories();
 
@@ -61,6 +76,9 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       for (var history in allHistories) {
         _categoryCounts[history.category] = (_categoryCounts[history.category] ?? 0) + 1;
       }
+
+      // 저장된 일정 로드
+      _loadSavedSchedules();
     } catch (e) {
       print('프로필 데이터 로드 오류: $e');
     } finally {
@@ -71,7 +89,27 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       }
     }
   }
-  
+
+  // 저장된 일정 로드
+  Future<void> _loadSavedSchedules() async {
+    try {
+      final schedules = await _scheduleSaveService.getSavedSchedules();
+      if (mounted) {
+        setState(() {
+          _savedSchedules = schedules;
+          _isLoadingSavedSchedules = false;
+        });
+      }
+    } catch (e) {
+      print('저장된 일정 로드 오류: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingSavedSchedules = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -113,6 +151,7 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
               _buildProfileCard(),
               _buildStatisticsCard(),
               _buildRecentVisitsSection(),
+              _buildSavedSchedulesSection(),
               _buildCategoryStats(),
               _buildActionButtons(),
               const SizedBox(height: 24),
@@ -224,144 +263,7 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
       ),
     );
   }
-  
-  Future<Map<String, String>> _fetchUserInfoFromBackend() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token');
 
-      print('토큰 전체: $token');
-      print('토큰 길이: ${token?.length}');
-      print('토큰 시작: ${token?.substring(0, Math.min(20, token?.length ?? 0))}');
-
-      if (token == null || token.isEmpty) {
-        print('토큰이 없습니다.');
-        return {'name': '사용자', 'email': 'user@example.com'};
-      }
-
-      final authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
-      print('API 요청에 사용되는 Authorization 헤더: ${authHeader.substring(0, Math.min(25, authHeader.length))}...');
-
-      try {
-        final response = await http.get(
-          Uri.parse('$baseUrl/users/me'),
-          headers: {
-            'Authorization': authHeader,
-            'Content-Type': 'application/json',
-          },
-        );
-
-        print('사용자 정보 API 응답 상태 코드: ${response.statusCode}');
-        print('사용자 정보 API 응답 본문: ${response.body}');
-
-        if (response.statusCode == 200) {
-          final userData = json.decode(utf8.decode(response.bodyBytes));
-          return {
-            'name': userData['name'] ?? '사용자',
-            'email': userData['email'] ?? 'user@example.com'
-          };
-        } else if (response.statusCode == 401 || response.statusCode == 403) {
-          print('인증 오류: 토큰이 만료되었거나 유효하지 않습니다.');
-
-          final name = prefs.getString('user_name');
-          final email = prefs.getString('user_email');
-
-          print('로컬 저장소에서 가져온 사용자 정보: $name, $email');
-
-          return {
-            'name': name ?? '사용자',
-            'email': email ?? 'user@example.com'
-          };
-        } else {
-          print('사용자 정보 조회 실패: ${response.body}');
-          return {'name': '사용자', 'email': 'user@example.com'};
-        }
-      } catch (e) {
-        print('HTTP 요청 오류: $e');
-        final name = prefs.getString('user_name');
-        final email = prefs.getString('user_email');
-
-        return {
-          'name': name ?? '사용자',
-          'email': email ?? 'user@example.com'
-        };
-      }
-    } catch (e) {
-      print('사용자 정보 API 호출 오류: $e');
-      return {'name': '사용자', 'email': 'user@example.com'};
-    }
-  }
-
-  Future<Map<String, String>> _getUserInfoFromLocalPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userName = prefs.getString('user_name');
-    final userEmail = prefs.getString('user_email');
-
-    print('로컬 저장소에서 가져온 사용자 정보: $userName, $userEmail');
-
-    return {
-      'name': userName ?? '사용자',
-      'email': userEmail ?? 'user@example.com'
-    };
-  }
-  
-  Future<String?> _getUserEmail() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      String? userEmail = prefs.getString('user_email');
-      print('SharedPreferences에서 가져온 사용자 이메일: $userEmail');
-
-      if (userEmail == null || userEmail.isEmpty) {
-        final userInfo = await _fetchUserInfoFromBackend();
-        return userInfo['email'];
-      }
-
-      return userEmail;
-    } catch (e) {
-      print('사용자 이메일 가져오기 오류: $e');
-      return 'user@example.com';
-    }
-  }
-  
-  Future<String?> _getUserName() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      String? userName = prefs.getString('user_name');
-      print('SharedPreferences에서 가져온 사용자 이름: $userName');
-
-      if (userName == null || userName.isEmpty) {
-        final userInfo = await _fetchUserInfoFromBackend();
-        return userInfo['name'];
-      }
-
-      return userName;
-    } catch (e) {
-      print('사용자 이름 가져오기 오류: $e');
-      return '사용자';
-    }
-  }
-
-  Future<String?> _getUserId() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      String? userId = prefs.getString('user_id');
-
-      if (userId == null || userId.isEmpty) {
-        final token = prefs.getString('access_token');
-        if (token != null && token.isNotEmpty) {
-          if (token.length > 10) {
-            userId = 'user_${token.substring(0, 8)}';
-          }
-        }
-      }
-
-      return userId;
-    } catch (e) {
-      print('Error retrieving user ID: $e');
-      return null;
-    }
-  }
-  
   Widget _buildStatisticsCard() {
     final visitCount = _recentHistories.length;
     final categoryCount = _categoryCounts.length;
@@ -536,6 +438,335 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
     );
   }
 
+  Widget _buildSavedSchedulesSection() {
+    if (_isLoadingSavedSchedules) {
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '저장된 일정',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: CircularProgressIndicator(color: Colors.grey[400]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_savedSchedules.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '저장된 일정',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SavedScheduleListScreen(),
+                      ),
+                    ).then((_) => _loadSavedSchedules());
+                  },
+                  child: const Text(
+                    '전체보기',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.calendar_month_outlined,
+                      size: 48,
+                      color: Colors.grey[400],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '저장된 일정이 없습니다',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: 160,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const SavedScheduleListScreen(),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('일정 만들기'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 최대 3개의 일정만 표시
+    final displayedSchedules = _savedSchedules.length > 3
+        ? _savedSchedules.sublist(0, 3)
+        : _savedSchedules;
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                '저장된 일정',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SavedScheduleListScreen(),
+                    ),
+                  ).then((_) => _loadSavedSchedules());
+                },
+                child: const Text(
+                  '전체보기',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...displayedSchedules.map((schedule) => _buildScheduleCard(schedule)).toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScheduleCard(Map<String, dynamic> schedule) {
+    // 날짜 포맷 변환
+    String expirationDate = '만료일 정보 없음';
+
+    try {
+      if (schedule['expirationDate'] != null) {
+        final expires = DateTime.parse(schedule['expirationDate']);
+        expirationDate = DateFormat('yyyy년 MM월 dd일').format(expires);
+      }
+    } catch (e) {
+      print('날짜 파싱 오류: $e');
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const SavedScheduleListScreen(),
+            ),
+          ).then((_) => _loadSavedSchedules());
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.calendar_today,
+                  color: Colors.black87,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      schedule['scheduleName'] ?? '제목 없음',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '만료일: $expirationDate',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.place, size: 16, color: Colors.grey[600]),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${schedule['itemCount'] ?? 0}개 장소',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => _showDeleteDialog(context, schedule),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteDialog(BuildContext context, Map<String, dynamic> schedule) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text(
+          '일정 삭제',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text('${schedule['scheduleName']} 일정을 삭제하시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text(
+              '취소',
+              style: TextStyle(color: Colors.black),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _deleteSchedule(schedule['id']);
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteSchedule(int scheduleId) async {
+    try {
+      final success = await _scheduleSaveService.deleteSavedSchedule(scheduleId);
+      if (success) {
+        setState(() {
+          _savedSchedules.removeWhere((schedule) => schedule['id'] == scheduleId);
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('일정이 삭제되었습니다')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('일정 삭제에 실패했습니다')),
+          );
+        }
+      }
+    } catch (e) {
+      print('일정 삭제 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('일정 삭제 중 오류가 발생했습니다: $e')),
+        );
+      }
+    }
+  }
+
   Widget _buildCategoryStats() {
     if (_categoryCounts.isEmpty) {
       return const SizedBox.shrink();
@@ -708,11 +939,41 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SavedScheduleListScreen(),
+                  ),
+                ).then((_) => _loadSavedSchedules());
+              },
+              icon: const Icon(Icons.bookmark),
+              label: const Text(
+                '저장된 일정 관리',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.black,
+                side: const BorderSide(color: Colors.black),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
-  
+
   Future<void> _showLogoutDialog() async {
     return showDialog(
       context: context,
@@ -822,5 +1083,142 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
     }
 
     return Icons.place;
+  }
+
+  Future<Map<String, String>> _fetchUserInfoFromBackend() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+
+      print('토큰 전체: $token');
+      print('토큰 길이: ${token?.length}');
+      print('토큰 시작: ${token?.substring(0, Math.min(10, token?.length ?? 0))}');
+
+      if (token == null || token.isEmpty) {
+        print('토큰이 없습니다.');
+        return {'name': '사용자', 'email': 'user@example.com'};
+      }
+
+      final authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
+      print('API 요청에 사용되는 Authorization 헤더: ${authHeader.substring(0, Math.min(25, authHeader.length))}...');
+
+      try {
+        final response = await http.get(
+          Uri.parse('$baseUrl/users/me'),
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+        );
+
+        print('사용자 정보 API 응답 상태 코드: ${response.statusCode}');
+        print('사용자 정보 API 응답 본문: ${response.body}');
+
+        if (response.statusCode == 200) {
+          final userData = json.decode(utf8.decode(response.bodyBytes));
+          return {
+            'name': userData['name'] ?? '사용자',
+            'email': userData['email'] ?? 'user@example.com'
+          };
+        } else if (response.statusCode == 401 || response.statusCode == 403) {
+          print('인증 오류: 토큰이 만료되었거나 유효하지 않습니다.');
+
+          final name = prefs.getString('user_name');
+          final email = prefs.getString('user_email');
+
+          print('로컬 저장소에서 가져온 사용자 정보: $name, $email');
+
+          return {
+            'name': name ?? '사용자',
+            'email': email ?? 'user@example.com'
+          };
+        } else {
+          print('사용자 정보 조회 실패: ${response.body}');
+          return {'name': '사용자', 'email': 'user@example.com'};
+        }
+      } catch (e) {
+        print('HTTP 요청 오류: $e');
+        final name = prefs.getString('user_name');
+        final email = prefs.getString('user_email');
+
+        return {
+          'name': name ?? '사용자',
+          'email': email ?? 'user@example.com'
+        };
+      }
+    } catch (e) {
+      print('사용자 정보 API 호출 오류: $e');
+      return {'name': '사용자', 'email': 'user@example.com'};
+    }
+  }
+
+  Future<Map<String, String>> _getUserInfoFromLocalPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userName = prefs.getString('user_name');
+    final userEmail = prefs.getString('user_email');
+
+    print('로컬 저장소에서 가져온 사용자 정보: $userName, $userEmail');
+
+    return {
+      'name': userName ?? '사용자',
+      'email': userEmail ?? 'user@example.com'
+    };
+  }
+
+  Future<String?> _getUserEmail() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String? userEmail = prefs.getString('user_email');
+      print('SharedPreferences에서 가져온 사용자 이메일: $userEmail');
+
+      if (userEmail == null || userEmail.isEmpty) {
+        final userInfo = await _fetchUserInfoFromBackend();
+        return userInfo['email'];
+      }
+
+      return userEmail;
+    } catch (e) {
+      print('사용자 이메일 가져오기 오류: $e');
+      return 'user@example.com';
+    }
+  }
+
+  Future<String?> _getUserName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String? userName = prefs.getString('user_name');
+      print('SharedPreferences에서 가져온 사용자 이름: $userName');
+
+      if (userName == null || userName.isEmpty) {
+        final userInfo = await _fetchUserInfoFromBackend();
+        return userInfo['name'];
+      }
+
+      return userName;
+    } catch (e) {
+      print('사용자 이름 가져오기 오류: $e');
+      return '사용자';
+    }
+  }
+
+  Future<String?> _getUserId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String? userId = prefs.getString('user_id');
+
+      if (userId == null || userId.isEmpty) {
+        final token = prefs.getString('access_token');
+        if (token != null && token.isNotEmpty) {
+          if (token.length > 10) {
+            userId = 'user_${token.substring(0, 8)}';
+          }
+        }
+      }
+
+      return userId;
+    } catch (e) {
+      print('Error retrieving user ID: $e');
+      return null;
+    }
   }
 }

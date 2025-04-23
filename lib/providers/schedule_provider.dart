@@ -4,18 +4,29 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/schedule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart' ;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../providers/auth_provider.dart'; // AuthProvider import 추가
+
 class ScheduleProvider with ChangeNotifier {
   List<Schedule> _schedules = [];
   bool _isLoading = false;
   String? _error;
-  // static const String baseUrl = 'http://10.0.2.2:8080/api/v1';  // baseUrl 추가
-  final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8080/api/v1';
+  final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8081/api/v1';
+  final AuthProvider authProvider; // AuthProvider 인스턴스 추가
+
+  // 생성자를 통해 AuthProvider 주입받기
+  ScheduleProvider({required this.authProvider});
+
   List<Schedule> get schedules => _schedules;
   List<Schedule> get fixedSchedules => _schedules.where((s) => s.type == 'FIXED').toList();
   List<Schedule> get flexibleSchedules => _schedules.where((s) => s.type == 'FLEXIBLE').toList();
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  // AuthProvider로부터 토큰 가져오기
+  Future<String?> getToken() async {
+    return authProvider.getToken(); // AuthProvider의 getToken 메서드 사용
+  }
 
   // 거리 계산 함수 추가
   double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
@@ -64,9 +75,18 @@ class ScheduleProvider with ChangeNotifier {
 
       print('Sending request to server: ${json.encode(requestBody)}');
 
+      // 인증 토큰 가져오기
+      final token = await getToken();
+      if (token == null) {
+        throw Exception('인증 토큰이 없습니다. 로그인이 필요합니다.');
+      }
+
       final response = await http.post(
           Uri.parse('$baseUrl/schedules/optimize-1'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token'
+          },
           body: json.encode(requestBody));
 
       if (response.statusCode == 200) {
@@ -204,5 +224,49 @@ class ScheduleProvider with ChangeNotifier {
 
   void loadSchedules() {
     notifyListeners();
+  }
+
+  void addSchedule(Schedule schedule) {
+    _schedules.add(schedule);
+    notifyListeners();
+  }
+
+  void removeSchedule(Schedule schedule) {
+    _schedules.removeWhere((item) => item.id == schedule.id);
+    notifyListeners();
+  }
+
+  void updateSchedule(Schedule updatedSchedule) {
+    final index = _schedules.indexWhere((schedule) => schedule.id == updatedSchedule.id);
+    if (index != -1) {
+      _schedules[index] = updatedSchedule;
+      notifyListeners();
+    }
+  }
+
+  // 날짜별로 일정을 그룹화
+  Map<DateTime, List<Schedule>> groupSchedulesByDay() {
+    final Map<DateTime, List<Schedule>> grouped = {};
+
+    for (final schedule in _schedules) {
+      final date = DateTime(
+        schedule.startTime.year,
+        schedule.startTime.month,
+        schedule.startTime.day,
+      );
+
+      if (!grouped.containsKey(date)) {
+        grouped[date] = [];
+      }
+
+      grouped[date]!.add(schedule);
+    }
+
+    // 각 그룹 내에서 시작 시간순으로 정렬
+    for (final schedules in grouped.values) {
+      schedules.sort((a, b) => a.startTime.compareTo(b.startTime));
+    }
+
+    return grouped;
   }
 }

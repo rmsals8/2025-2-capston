@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../place/place_search_screen.dart';
 import 'optimized_schedule_screen.dart';
@@ -34,8 +35,9 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
     return ChangeNotifierProvider(
-      create: (_) => ScheduleProvider(),
+      create: (_) => ScheduleProvider(authProvider: authProvider),
       child: Builder(
         builder: (context) => Scaffold(
           backgroundColor: Colors.white,

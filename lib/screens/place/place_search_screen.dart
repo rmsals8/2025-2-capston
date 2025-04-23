@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';  // Timer를 위해 추가
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';  // AuthProvider 추가
 
 class PlaceSearchScreen extends StatefulWidget {
   const PlaceSearchScreen({Key? key}) : super(key: key);
@@ -32,7 +34,27 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
       // 백엔드 API 호출
       final uri = Uri.parse('$baseUrl/places/search?query=$encodedQuery');
 
-      final response = await http.get(uri);
+      // AuthProvider에서 토큰 가져오기
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = await authProvider.getToken();
+
+      // 토큰 로깅 추가
+      print('AuthToken: ${token != null ? (token.length > 10 ? token.substring(0, 10) + '...' : token) : 'null'}');
+
+      // 요청 헤더에 토큰 추가
+      final headers = {
+        'Content-Type': 'application/json',
+      };
+
+      // 토큰이 있으면 Authorization 헤더 추가
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+        print('Authorization header added');
+      } else {
+        print('WARNING: No token available for API request');
+      }
+
+      final response = await http.get(uri, headers: headers);
 
       print('Query: $query');
       print('URL: ${uri.toString()}');
@@ -61,6 +83,14 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // AuthProvider가 사용 가능한지 확인하는 로깅 추가
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      print('AuthProvider found in context');
+    } catch (e) {
+      print('ERROR: AuthProvider not found in context: $e');
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -108,13 +138,13 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                   prefixIcon: const Icon(Icons.search, color: Colors.black),
                   suffixIcon: _isLoading
                       ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                          ),
-                        )
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                    ),
+                  )
                       : null,
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(
@@ -132,82 +162,82 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
             ),
           ),
           Expanded(
-            child: _places.isEmpty 
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.search_off_rounded,
-                        size: 64,
-                        color: Colors.grey[300],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        '검색 결과가 없습니다',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
+            child: _places.isEmpty
+                ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.search_off_rounded,
+                    size: 64,
+                    color: Colors.grey[300],
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _places.length,
-                  itemBuilder: (context, index) {
-                    final place = _places[index];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
+                  const SizedBox(height: 16),
+                  Text(
+                    '검색 결과가 없습니다',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            )
+                : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _places.length,
+              itemBuilder: (context, index) {
+                final place = _places[index];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[200]!),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    leading: Container(
+                      width: 48,
+                      height: 48,
                       decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[200]!),
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        leading: Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.location_on, color: Colors.black),
-                        ),
-                        title: Text(
-                          place['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                          ),
-                        ),
-                        subtitle: Text(
-                          place['address'] ?? place['roadAddress'] ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 14,
-                          ),
-                        ),
-                        trailing: Icon(
-                          Icons.chevron_right,
-                          color: Colors.grey[400],
-                        ),
-                        onTap: () {
-                          Navigator.pop(context, {
-                            'name': place['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
-                            'address': place['address'] ?? place['roadAddress'] ?? '',
-                            'latitude': double.tryParse(place['mapy'] ?? '') ?? 0,
-                            'longitude': double.tryParse(place['mapx'] ?? '') ?? 0,
-                          });
-                        },
+                      child: const Icon(Icons.location_on, color: Colors.black),
+                    ),
+                    title: Text(
+                      place['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
                       ),
-                    );
-                  },
-                ),
+                    ),
+                    subtitle: Text(
+                      place['address'] ?? place['roadAddress'] ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: Colors.grey[400],
+                    ),
+                    onTap: () {
+                      Navigator.pop(context, {
+                        'name': place['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
+                        'address': place['address'] ?? place['roadAddress'] ?? '',
+                        'latitude': double.tryParse(place['mapy'] ?? '') ?? 0,
+                        'longitude': double.tryParse(place['mapx'] ?? '') ?? 0,
+                      });
+                    },
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
