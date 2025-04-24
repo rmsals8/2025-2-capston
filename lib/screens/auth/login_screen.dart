@@ -274,7 +274,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _handleLogin() async {
+void _handleLogin() async {
   if (_formKey.currentState?.validate() ?? false) {
     setState(() {
       _isLoading = true;
@@ -312,6 +312,34 @@ class _LoginScreenState extends State<LoginScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('access_token', authResponse['accessToken']);
         await prefs.setString('refresh_token', authResponse['refreshToken']);
+
+        // 사용자 정보 저장
+        if (authResponse['userProfile'] != null) {
+          final userProfile = authResponse['userProfile'];
+          
+          if (userProfile['id'] != null) {
+            await prefs.setString('user_id', userProfile['id'].toString());
+          }
+          
+          if (userProfile['name'] != null) {
+            await prefs.setString('user_name', userProfile['name']);
+          }
+          
+          if (userProfile['email'] != null) {
+            await prefs.setString('user_email', userProfile['email']);
+          }
+          
+          // 로그인 타입 저장 추가
+          if (userProfile['loginType'] != null) {
+            await prefs.setInt('login_type', userProfile['loginType']);
+          } else {
+            // 일반 로그인 시 loginType이 없으면 0으로 설정
+            await prefs.setInt('login_type', 0);
+          }
+        } else {
+          // userProfile이 없는 경우 기본값 설정
+          await prefs.setInt('login_type', 0);
+        }
 
         if (mounted) {
           Navigator.pushReplacement(
