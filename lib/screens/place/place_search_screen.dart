@@ -20,59 +20,76 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
   bool _isLoading = false;
   final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8080/api/v1';
 
-Future<void> _searchPlaces(String query) async {
-  if (query.isEmpty) {
-    setState(() => _places = []);
-    return;
-  }
-
-  setState(() => _isLoading = true);
-
-  try {
-    final encodedQuery = Uri.encodeComponent(query);
-    final uri = Uri.parse('$baseUrl/places/search?query=$encodedQuery');
-
-    // AuthProvider에서 토큰 가져오기
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final token = await authProvider.getToken();
-    
-    // 디버깅용 로그
-    print('Token: ${token != null ? (token.length > 10 ? token.substring(0, 10) + '...' : token) : 'null'}');
-
-    // 요청 헤더에 토큰 추가 - 형식 확인
-    final headers = {
-      'Content-Type': 'application/json',
-    };
-
-    // 토큰이 null이 아니라도 Authorization 헤더 추가하지 않기
-    // (excludedPaths에 /api/v1/places/search가 이미 포함되어 있으므로)
-    
-    print('Request URL: $uri');
-    print('Request Headers: $headers');
-
-    final response = await http.get(uri, headers: headers);
-
-    print('Status Code: ${response.statusCode}');
-    if (response.statusCode != 200) {
-      print('Response Body: ${response.body}');
+  Future<void> _searchPlaces(String query) async {
+    if (query.isEmpty) {
+      setState(() => _places = []);
+      return;
     }
 
-    if (response.statusCode == 200) {
-      final data = json.decode(utf8.decode(response.bodyBytes));
-      setState(() => _places = data['items'] ?? []);
-    } else if (response.statusCode == 401) {
-      print('인증 오류: 토큰이 유효하지 않거나 만료되었습니다.');
-      // 로그인 페이지로 이동하거나 토큰 갱신 로직 추가
-    } else {
-      print('Error Response: ${response.body}');
+    setState(() => _isLoading = true);
+
+    try {
+      final encodedQuery = Uri.encodeComponent(query);
+      final uri = Uri.parse('$baseUrl/places/search?query=$encodedQuery');
+
+      // AuthProvider에서 토큰 가져오기
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = await authProvider.getToken();
+
+      // 디버깅용 로그
+      print('Token: ${token != null ? (token.length > 10 ? token.substring(0, 10) + '...' : token) : 'null'}');
+
+      // 요청 헤더에 토큰 추가 - Authorization 헤더 추가
+      final headers = {
+        'Content-Type': 'application/json',
+      };
+
+      // 중요: 토큰이 있을 경우 Authorization 헤더 추가
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+
+      print('Request URL: $uri');
+      print('Request Headers: $headers');
+
+      final response = await http.get(uri, headers: headers);
+
+      print('Status Code: ${response.statusCode}');
+      if (response.statusCode != 200) {
+        print('Response Body: ${response.body}');
+      }
+
+      if (response.statusCode == 200) {
+        final data = json.decode(utf8.decode(response.bodyBytes));
+        // 응답 구조에 따라 'data' 필드 아래의 'items'를 가져옴
+        final items = data['data'] != null ?
+        (data['data']['items'] ?? []) :
+        (data['items'] ?? []);
+        setState(() => _places = items);
+      } else if (response.statusCode == 401) {
+        print('인증 오류: 토큰이 유효하지 않거나 만료되었습니다.');
+        // 토큰 갱신 시도 (void 메서드 호출)
+        await authProvider.refreshToken();
+        // 갱신 후 새 토큰을 가져와서 확인
+        final newToken = await authProvider.getToken();
+
+        if (newToken != null && newToken.isNotEmpty) {
+          // 새 토큰이 있으면 재시도
+          _searchPlaces(query);
+        } else {
+          // 토큰 갱신 실패로 간주
+          // 로그인 화면으로 이동하는 로직 (필요에 따라 구현)
+        }
+      } else {
+        print('Error Response: ${response.body}');
+      }
+    } catch (e, stackTrace) {
+      print('Error details: $e');
+      print('Stack trace: $stackTrace');
+    } finally {
+      setState(() => _isLoading = false);
     }
-  } catch (e, stackTrace) {
-    print('Error details: $e');
-    print('Stack trace: $stackTrace');
-  } finally {
-    setState(() => _isLoading = false);
   }
-}
 
   @override
   void dispose() {

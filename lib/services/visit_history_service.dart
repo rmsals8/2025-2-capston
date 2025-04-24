@@ -15,6 +15,82 @@ class VisitHistoryService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('access_token');
   }
+  // 페이징 처리된 방문 기록 조회
+  Future<Map<String, dynamic>> getVisitHistoriesPaged({
+    String? category,
+    int page = 0,
+    int size = 10,
+  }) async {
+    try {
+      final token = await _getToken();
+
+      print('페이징 방문 기록 API 요청에 사용되는 토큰: $token');
+
+      if (token == null) {
+        throw Exception('Authentication required');
+      }
+
+      String authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
+
+      String url = '$baseUrl/paged?page=$page&size=$size';
+      if (category != null && category.isNotEmpty && category != '전체') {
+        url += '&category=$category';
+      }
+
+      print('페이징 방문 기록 API 요청 URL: $url');
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': authHeader
+        },
+      );
+
+      print('페이징 방문 기록 API 응답 상태 코드: ${response.statusCode}');
+      print('페이징 방문 기록 API 응답 본문: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> jsonResponse = jsonDecode(response.body);
+
+        if (jsonResponse['status'] == 200 && jsonResponse['data'] != null) {
+          final Map<String, dynamic> pageInfo = jsonResponse['data'];
+          final List<dynamic> historyList = pageInfo['content'] ?? [];
+
+          // 방문 기록 객체로 변환
+          final List<VisitHistory> histories = historyList
+              .map((item) => VisitHistory.fromJson(item))
+              .toList();
+
+          // 페이징 정보와 데이터를 함께 반환
+          return {
+            'histories': histories,
+            'totalPages': pageInfo['totalPages'] ?? 0,
+            'currentPage': pageInfo['currentPage'] ?? 0,
+            'totalElements': pageInfo['totalElements'] ?? 0,
+            'isFirst': pageInfo['first'] ?? true,
+            'isLast': pageInfo['last'] ?? true,
+            'isEmpty': pageInfo['empty'] ?? true,
+          };
+        } else {
+          print('응답 데이터 형식이 올바르지 않습니다: ${jsonResponse['message']}');
+          return {
+            'histories': <VisitHistory>[],
+            'totalPages': 0,
+            'currentPage': 0,
+            'totalElements': 0,
+            'isFirst': true,
+            'isLast': true,
+            'isEmpty': true,
+          };
+        }
+      } else {
+        throw Exception('방문 기록을 가져오는데 실패했습니다: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('페이징 방문 기록 가져오기 오류: $e');
+      throw Exception('페이징 방문 기록 조회 중 오류 발생: $e');
+    }
+  }
   // 방문 기록 추가 함수에도 비슷한 디버깅 추가
   Future<void> addVisitHistory(String placeName, String placeId, String category,
       double latitude, double longitude, String address) async {
@@ -72,48 +148,48 @@ class VisitHistoryService {
     }
   }
   // 방문 기록 조회
-Future<List<VisitHistory>> getVisitHistories({String? category}) async {
-  try {
-    final token = await _getToken();
+  Future<List<VisitHistory>> getVisitHistories({String? category}) async {
+    try {
+      final token = await _getToken();
 
-    print('방문 기록 API 요청에 사용되는 토큰: $token');
+      print('방문 기록 API 요청에 사용되는 토큰: $token');
 
-    if (token == null) {
-      throw Exception('Authentication required');
+      if (token == null) {
+        throw Exception('Authentication required');
+      }
+
+      String authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
+
+      String url = baseUrl;
+      if (category != null && category.isNotEmpty && category != '전체') {
+        url += '?category=$category';
+      }
+
+      print('방문 기록 API 요청 URL: $url');
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': authHeader
+        },
+      );
+
+      print('방문 기록 API 응답 상태 코드: ${response.statusCode}');
+      print('방문 기록 API 응답 본문: ${response.body}');
+
+      if (response.statusCode == 200) {
+        // 여기가 수정된 부분: 응답을 Map으로 파싱한 다음 'data' 필드를 추출
+        final Map<String, dynamic> jsonResponse = jsonDecode(response.body);
+        final List<dynamic> jsonList = jsonResponse['data'];
+        return jsonList.map((json) => VisitHistory.fromJson(json)).toList();
+      } else {
+        throw Exception('Failed to get visit histories: ${response.body}');
+      }
+    } catch (e) {
+      print('방문 기록 가져오기 오류: $e');
+      throw Exception('Error getting visit histories: $e');
     }
-
-    String authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
-
-    String url = baseUrl;
-    if (category != null && category.isNotEmpty && category != '전체') {
-      url += '?category=$category';
-    }
-
-    print('방문 기록 API 요청 URL: $url');
-
-    final response = await http.get(
-      Uri.parse(url),
-      headers: {
-        'Authorization': authHeader
-      },
-    );
-
-    print('방문 기록 API 응답 상태 코드: ${response.statusCode}');
-    print('방문 기록 API 응답 본문: ${response.body}');
-
-    if (response.statusCode == 200) {
-      // 여기가 수정된 부분: 응답을 Map으로 파싱한 다음 'data' 필드를 추출
-      final Map<String, dynamic> jsonResponse = jsonDecode(response.body);
-      final List<dynamic> jsonList = jsonResponse['data'];
-      return jsonList.map((json) => VisitHistory.fromJson(json)).toList();
-    } else {
-      throw Exception('Failed to get visit histories: ${response.body}');
-    }
-  } catch (e) {
-    print('방문 기록 가져오기 오류: $e');
-    throw Exception('Error getting visit histories: $e');
   }
-}
 
 
   // 카테고리별 방문 기록 조회

@@ -1,4 +1,3 @@
-// lib/screens/profile/visit_history_screen.dart
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
@@ -27,6 +26,13 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
   List<String> _categories = ['전체'];
   String? _selectedCategory;
 
+  // 페이징 관련 상태 변수
+  int _currentPage = 0;
+  int _totalPages = 0;
+  int _pageSize = 10; // 한 페이지당 아이템 수
+  bool _isFirstPage = true;
+  bool _isLastPage = false;
+
   @override
   void initState() {
     super.initState();
@@ -41,6 +47,7 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     super.dispose();
   }
 
+  // 페이징 처리된 데이터 로드
   Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
@@ -48,31 +55,30 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     });
 
     try {
-      _histories = await _historyService.getVisitHistories(
-          category: _selectedCategory
+      // 페이징 처리된 API 호출
+      final result = await _historyService.getVisitHistoriesPaged(
+        category: _selectedCategory,
+        page: _currentPage,
+        size: _pageSize,
       );
 
-      _categoryCounts = {};
+      // 결과 처리
+      _histories = result['histories'];
+      _totalPages = result['totalPages'];
+      _currentPage = result['currentPage'];
+      _isFirstPage = result['isFirst'];
+      _isLastPage = result['isLast'];
+
       _categorizedHistories = {'전체': _histories};
 
+      // 카테고리별 분류
       for (var history in _histories) {
-        _categoryCounts[history.category] = (_categoryCounts[history.category] ?? 0) + 1;
-
         if (_categorizedHistories.containsKey(history.category)) {
           _categorizedHistories[history.category]!.add(history);
         } else {
           _categorizedHistories[history.category] = [history];
         }
       }
-
-      _categories = ['전체'];
-      List<MapEntry<String, int>> sortedCategories = _categoryCounts.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-
-      _categories.addAll(sortedCategories.map((e) => e.key));
-
-      _tabController.dispose();
-      _tabController = TabController(length: _categories.length, vsync: this);
 
     } catch (e) {
       _errorMessage = '방문 기록을 불러오는데 실패했습니다: $e';
@@ -91,8 +97,28 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
       setState(() {
         _categoryCounts = stats.map((key, value) => MapEntry(key, value.toInt()));
       });
+
+      _categories = ['전체'];
+      List<MapEntry<String, int>> sortedCategories = _categoryCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      _categories.addAll(sortedCategories.map((e) => e.key));
+
+      _tabController.dispose();
+      _tabController = TabController(length: _categories.length, vsync: this);
+
     } catch (e) {
       print('Error loading category stats: $e');
+    }
+  }
+
+  // 페이지 변경 메서드
+  void _changePage(int newPage) {
+    if (newPage >= 0 && newPage < _totalPages) {
+      setState(() {
+        _currentPage = newPage;
+      });
+      _loadData();
     }
   }
 
@@ -160,17 +186,94 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
           ? _buildErrorView()
           : _histories.isEmpty
           ? _buildEmptyState()
-          : TabBarView(
-        controller: _tabController,
-        children: _categories.map((category) =>
-            _buildHistoryList(_categorizedHistories[category] ?? [])
-        ).toList(),
+          : Column(
+        children: [
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: _categories.map((category) =>
+                  _buildHistoryList(_categorizedHistories[category] ?? [])
+              ).toList(),
+            ),
+          ),
+          // 페이지네이션 UI 추가
+          if (_totalPages > 1) _buildPagination(),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showClearHistoryDialog,
         backgroundColor: Colors.black,
         child: const Icon(Icons.delete, color: Colors.white),
         tooltip: '기록 삭제',
+      ),
+    );
+  }
+
+  // 페이지네이션 UI 위젯
+  Widget _buildPagination() {
+    // 표시할 페이지 번호의 범위 계산
+    int startPage = _currentPage - 2 < 0 ? 0 : _currentPage - 2;
+    int endPage = startPage + 4 >= _totalPages ? _totalPages - 1 : startPage + 4;
+
+    // 시작 페이지가 너무 뒤로 밀리지 않도록 조정
+    if (endPage - startPage < 4 && startPage > 0) {
+      startPage = endPage - 4 < 0 ? 0 : endPage - 4;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.2),
+            spreadRadius: 1,
+            blurRadius: 5,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // 이전 페이지 버튼
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: _isFirstPage ? null : () => _changePage(_currentPage - 1),
+            color: _isFirstPage ? Colors.grey : Colors.black,
+          ),
+
+          // 페이지 번호 버튼들
+          for (int i = startPage; i <= endPage; i++)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              child: ElevatedButton(
+                onPressed: i == _currentPage ? null : () => _changePage(i),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: i == _currentPage ? Colors.black : Colors.grey[200],
+                  foregroundColor: i == _currentPage ? Colors.white : Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  minimumSize: const Size(40, 40),
+                ),
+                child: Text(
+                  '${i + 1}',
+                  style: TextStyle(
+                    fontWeight: i == _currentPage ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+
+          // 다음 페이지 버튼
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: _isLastPage ? null : () => _changePage(_currentPage + 1),
+            color: _isLastPage ? Colors.grey : Colors.black,
+          ),
+        ],
       ),
     );
   }
@@ -317,101 +420,6 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     );
   }
 
-  Widget _buildStatisticsCard() {
-    int totalVisits = _histories.fold(0, (sum, history) => sum + history.visitCount);
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildStatItem(
-            icon: Icons.place,
-            value: _histories.length.toString(),
-            label: '방문 장소',
-          ),
-          _buildStatItem(
-            icon: Icons.repeat,
-            value: totalVisits.toString(),
-            label: '총 방문 횟수',
-          ),
-          _buildStatItem(
-            icon: Icons.category,
-            value: _categoryCounts.length.toString(),
-            label: '카테고리',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatItem({
-    required IconData icon,
-    required String value,
-    required String label,
-  }) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: Colors.white),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-        ),
-      ],
-    );
-  }
-
-  void _navigateToRecommendations() async {
-    final locationProvider = Provider.of<LocationProvider>(context, listen: false);
-    try {
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const HistoryBasedRecommendationsScreen(),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('추천 화면을 열 수 없습니다: $e')),
-      );
-    }
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inDays == 0) {
-      return '오늘';
-    } else if (difference.inDays == 1) {
-      return '어제';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}일 전';
-    } else {
-      return '${date.year}.${date.month}.${date.day}';
-    }
-  }
-
   IconData _getCategoryIcon(String category) {
     final lowerCategory = category.toLowerCase();
 
@@ -535,27 +543,18 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     );
   }
 
-  Future<void> _showSimilarPlaces() async {
+  void _navigateToRecommendations() async {
     final locationProvider = Provider.of<LocationProvider>(context, listen: false);
     try {
-      LatLng currentLocation = await locationProvider.getCurrentLocation();
-
-      if (!mounted) return;
-
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => PlaceRecommendationsScreen(
-            currentLocation: currentLocation,
-            title: '방문 기록 기반 추천',
-          ),
+          builder: (context) => const HistoryBasedRecommendationsScreen(),
         ),
       );
     } catch (e) {
-      if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('현재 위치를 가져올 수 없습니다')),
+        SnackBar(content: Text('추천 화면을 열 수 없습니다: $e')),
       );
     }
   }
@@ -583,6 +582,21 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('현재 위치를 가져올 수 없습니다')),
       );
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays == 0) {
+      return '오늘';
+    } else if (difference.inDays == 1) {
+      return '어제';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}일 전';
+    } else {
+      return '${date.year}.${date.month}.${date.day}';
     }
   }
 
@@ -675,14 +689,5 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
         );
       }
     }
-  }
-
-  int _getRecentVisitCount() {
-    final now = DateTime.now();
-    final firstDayOfMonth = DateTime(now.year, now.month, 1);
-
-    return _histories
-        .where((h) => h.visitDate.isAfter(firstDayOfMonth))
-        .length;
   }
 }
