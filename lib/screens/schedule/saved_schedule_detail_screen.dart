@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart'; // Provider 패키지 추가
 import '../../services/schedule_save_service.dart';
+import '../../providers/route_provider.dart'; // RouteProvider 추가
+import '../route/route_list_screen.dart'; // RouteListScreen 추가
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:math' as math;
 
@@ -26,6 +29,7 @@ class _SavedScheduleDetailScreenState extends State<SavedScheduleDetailScreen> w
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
   GoogleMapController? _mapController;
+  bool _isGeneratingRoute = false; // 경로 생성 중 상태 추가
 
   @override
   void initState() {
@@ -60,6 +64,101 @@ class _SavedScheduleDetailScreenState extends State<SavedScheduleDetailScreen> w
         _hasError = true;
         _errorMessage = e.toString();
       });
+    }
+  }
+
+  // 경로 생성 함수 추가
+  Future<void> _createRoute(BuildContext context) async {
+    try {
+      setState(() {
+        _isGeneratingRoute = true;
+      });
+
+      final routeProvider = context.read<RouteProvider>();
+
+      // 저장된 일정에서 장소 정보 추출
+      if (_scheduleDetail.isEmpty || _scheduleDetail['scheduleItems'] == null || _scheduleDetail['scheduleItems'].isEmpty) {
+        throw Exception('경로를 생성할 장소 정보가 없습니다.');
+      }
+
+      final items = _scheduleDetail['scheduleItems'] as List;
+      
+      // 형식 변환 (optimized_schedule_screen.dart의 _createRoute 함수 참조)
+      final formattedSchedules = items.map((item) {
+        // 기본 좌표값
+        double latitude = 0.0;
+        double longitude = 0.0;
+        
+        // 일정 항목에서 좌표 추출
+        if (item['latitude'] != null && item['longitude'] != null) {
+          latitude = double.tryParse(item['latitude'].toString()) ?? 0.0;
+          longitude = double.tryParse(item['longitude'].toString()) ?? 0.0;
+        }
+        
+        // 위치 데이터가 없거나 잘못된 경우 무작위 좌표로 대체 (테스트용)
+        if (latitude == 0 || longitude == 0) {
+          // 서울 중심 좌표: 37.5665, 126.978
+          latitude = 37.5665 + (math.Random().nextDouble() * 0.02) - 0.01;  
+          longitude = 126.978 + (math.Random().nextDouble() * 0.02) - 0.01;
+        }
+
+        return {
+          'name': item['name'] ?? '',
+          'latitude': latitude,
+          'longitude': longitude,
+          'location': item['name'] ?? '',  // location은 문자열로 변환
+          'visitTime': item['startTime'] ?? DateTime.now().toIso8601String(),
+          'duration': _calculateDuration(item['startTime'], item['endTime']),
+        };
+      }).toList();
+
+      print('Formatted schedules for routes: $formattedSchedules');
+
+      // 경로 생성 요청
+      await routeProvider.getRecommendedRoutes(formattedSchedules);
+
+      if (context.mounted) {
+        setState(() {
+          _isGeneratingRoute = false;
+        });
+        
+        if (routeProvider.routes.isNotEmpty) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const RouteListScreen(),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('경로를 생성할 수 없습니다.')),
+          );
+        }
+      }
+    } catch (e) {
+      print('경로 생성 오류: $e');
+      if (context.mounted) {
+        setState(() {
+          _isGeneratingRoute = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('경로 생성 중 오류가 발생했습니다: $e')),
+        );
+      }
+    }
+  }
+
+  // 소요 시간 계산 (분 단위)
+  int _calculateDuration(dynamic startTime, dynamic endTime) {
+    try {
+      if (startTime == null || endTime == null) return 60; // 기본값
+
+      DateTime start = DateTime.parse(startTime.toString());
+      DateTime end = DateTime.parse(endTime.toString());
+      
+      return end.difference(start).inMinutes;
+    } catch (e) {
+      return 60; // 오류 시 기본값
     }
   }
 
@@ -191,13 +290,88 @@ class _SavedScheduleDetailScreenState extends State<SavedScheduleDetailScreen> w
           ? const Center(child: CircularProgressIndicator(color: Colors.black))
           : _hasError
               ? _buildErrorView()
-              : TabBarView(
-                  controller: _tabController,
+              : Stack(
                   children: [
-                    _buildScheduleListView(),
-                    _buildMapView(),
+                    TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildScheduleListView(),
+                        _buildMapView(),
+                      ],
+                    ),
+                    // 경로 생성 중 로딩 인디케이터
+                    if (_isGeneratingRoute)
+                      Container(
+                        color: Colors.black.withOpacity(0.4),
+                        child: const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(color: Colors.white),
+                              SizedBox(height: 16),
+                              Text(
+                                '경로 생성 중...',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                   ],
                 ),
+      // 하단 버튼 추가 (경로 생성 버튼)
+      bottomNavigationBar: _isLoading || _hasError
+          ? null
+          : Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              child: SizedBox(
+                height: 56,
+                child: ElevatedButton.icon(
+                  icon: _isGeneratingRoute
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.map),
+                  label: Text(
+                    _isGeneratingRoute ? '경로 생성 중...' : '경로 생성',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 0,
+                  ),
+                  onPressed: _isGeneratingRoute
+                      ? null
+                      : () => _createRoute(context),
+                ),
+              ),
+            ),
     );
   }
 
@@ -646,28 +820,28 @@ class _SavedScheduleDetailScreenState extends State<SavedScheduleDetailScreen> w
                       height: 16,
                       decoration: const BoxDecoration(
                         color: Colors.blue,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Text('경유지', style: TextStyle(fontSize: 12)),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 16,
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Text('종료', style: TextStyle(fontSize: 12)),
-                  ],
-                ),
+        shape: BoxShape.circle,
+      ),
+    ),
+    const SizedBox(width: 4),
+    const Text('경유지', style: TextStyle(fontSize: 12)),
+  ],
+),
+const SizedBox(height: 4),
+Row(
+  children: [
+    Container(
+      width: 16,
+      height: 16,
+      decoration: const BoxDecoration(
+        color: Colors.red,
+        shape: BoxShape.circle,
+      ),
+    ),
+    const SizedBox(width: 4),
+    const Text('종료', style: TextStyle(fontSize: 12)),
+  ],
+),
               ],
             ),
           ),
