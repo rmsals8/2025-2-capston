@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/schedule_save_service.dart';
+import 'saved_schedule_detail_screen.dart'; // 새로운 화면 import
 
 class SavedScheduleListScreen extends StatefulWidget {
   const SavedScheduleListScreen({Key? key}) : super(key: key);
@@ -61,6 +62,48 @@ class _SavedScheduleListScreenState extends State<SavedScheduleListScreen> {
         SnackBar(content: Text('일정 삭제 중 오류가 발생했습니다: $e')),
       );
     }
+  }
+
+  void _showDeleteDialog(BuildContext context, Map<String, dynamic> schedule) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text(
+          '일정 삭제',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text('${schedule['scheduleName']} 일정을 삭제하시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text(
+              '취소',
+              style: TextStyle(color: Colors.black),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _deleteSchedule(schedule['id']);
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _navigateToDetailScreen(int scheduleId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SavedScheduleDetailScreen(scheduleId: scheduleId),
+      ),
+    ).then((_) => _loadSavedSchedules()); // 상세 화면에서 돌아왔을 때 목록 갱신
   }
 
   @override
@@ -175,100 +218,106 @@ class _SavedScheduleListScreenState extends State<SavedScheduleListScreen> {
       print('날짜 파싱 오류: $e');
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        schedule['scheduleName'] ?? '제목 없음',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () => _showDeleteDialog(context, schedule),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '생성일: $createdAt',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '만료일: $expiresAt',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
+    return GestureDetector(
+      onTap: () {
+        // 일정 세부 정보 화면으로 이동
+        _navigateToDetailScreen(schedule['id']);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[200]!),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(12),
-                bottomRight: Radius.circular(12),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          schedule['scheduleName'] ?? '제목 없음',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        onPressed: () => _showDeleteDialog(context, schedule),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '생성일: $createdAt',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '만료일: $expiresAt',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildMetricItem(
-                  icon: Icons.route,
-                  value: '${(schedule['totalDistance'] ?? 0.0).toStringAsFixed(1)} km',
-                  label: '총 거리',
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(12),
+                  bottomRight: Radius.circular(12),
                 ),
-                _buildMetricItem(
-                  icon: Icons.access_time,
-                  value: '${schedule['totalTime'] ?? 0} 분',
-                  label: '소요 시간',
-                ),
-                _buildMetricItem(
-                  icon: Icons.place,
-                  value: '${schedule['itemCount'] ?? 0} 곳',
-                  label: '장소 수',
-                ),
-              ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildMetricItem(
+                    icon: Icons.route,
+                    value: '${(schedule['totalDistance'] ?? 0.0).toStringAsFixed(1)} km',
+                    label: '총 거리',
+                  ),
+                  _buildMetricItem(
+                    icon: Icons.access_time,
+                    value: '${schedule['totalTime'] ?? 0} 분',
+                    label: '소요 시간',
+                  ),
+                  _buildMetricItem(
+                    icon: Icons.place,
+                    value: '${schedule['itemCount'] ?? 0} 곳',
+                    label: '장소 수',
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -280,56 +329,23 @@ class _SavedScheduleListScreenState extends State<SavedScheduleListScreen> {
   }) {
     return Column(
       children: [
-        Icon(icon, size: 18, color: Colors.black87),
-        const SizedBox(height: 4),
+        Icon(icon, color: Colors.black87, size: 24),
+        const SizedBox(height: 8),
         Text(
           value,
           style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            fontSize: 16,
           ),
         ),
         Text(
           label,
           style: TextStyle(
             color: Colors.grey[600],
-            fontSize: 12,
+            fontSize: 14,
           ),
         ),
       ],
-    );
-  }
-
-  void _showDeleteDialog(BuildContext context, Map<String, dynamic> schedule) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text(
-          '일정 삭제',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: Text('${schedule['scheduleName']} 일정을 삭제하시겠습니까?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text(
-              '취소',
-              style: TextStyle(color: Colors.black),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _deleteSchedule(schedule['id']);
-            },
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-            ),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
     );
   }
 }
