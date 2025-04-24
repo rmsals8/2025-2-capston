@@ -72,48 +72,48 @@ class VisitHistoryService {
     }
   }
   // 방문 기록 조회
-  Future<List<VisitHistory>> getVisitHistories({String? category}) async {
-    try {
-      final token = await _getToken();
+Future<List<VisitHistory>> getVisitHistories({String? category}) async {
+  try {
+    final token = await _getToken();
 
-      // 토큰 디버깅
-      print('방문 기록 API 요청에 사용되는 토큰: $token');
+    print('방문 기록 API 요청에 사용되는 토큰: $token');
 
-      if (token == null) {
-        throw Exception('Authentication required');
-      }
-
-      // 토큰에 'Bearer ' 접두사 확인 및 추가
-      String authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
-
-      String url = baseUrl;
-      if (category != null && category.isNotEmpty) {
-        url += '?category=$category';
-      }
-
-      print('방문 기록 API 요청 URL: $url');
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Authorization': authHeader
-        },
-      );
-
-      print('방문 기록 API 응답 상태 코드: ${response.statusCode}');
-      print('방문 기록 API 응답 본문: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final List<dynamic> jsonList = jsonDecode(response.body);
-        return jsonList.map((json) => VisitHistory.fromJson(json)).toList();
-      } else {
-        throw Exception('Failed to get visit histories: ${response.body}');
-      }
-    } catch (e) {
-      print('방문 기록 가져오기 오류: $e');
-      throw Exception('Error getting visit histories: $e');
+    if (token == null) {
+      throw Exception('Authentication required');
     }
+
+    String authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
+
+    String url = baseUrl;
+    if (category != null && category.isNotEmpty && category != '전체') {
+      url += '?category=$category';
+    }
+
+    print('방문 기록 API 요청 URL: $url');
+
+    final response = await http.get(
+      Uri.parse(url),
+      headers: {
+        'Authorization': authHeader
+      },
+    );
+
+    print('방문 기록 API 응답 상태 코드: ${response.statusCode}');
+    print('방문 기록 API 응답 본문: ${response.body}');
+
+    if (response.statusCode == 200) {
+      // 여기가 수정된 부분: 응답을 Map으로 파싱한 다음 'data' 필드를 추출
+      final Map<String, dynamic> jsonResponse = jsonDecode(response.body);
+      final List<dynamic> jsonList = jsonResponse['data'];
+      return jsonList.map((json) => VisitHistory.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to get visit histories: ${response.body}');
+    }
+  } catch (e) {
+    print('방문 기록 가져오기 오류: $e');
+    throw Exception('Error getting visit histories: $e');
   }
+}
 
 
   // 카테고리별 방문 기록 조회
