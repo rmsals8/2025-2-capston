@@ -1,4 +1,6 @@
 // lib/screens/home/home_screen.dart
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
@@ -905,124 +907,184 @@ Future<void> _loadData() async {
     );
   }
 
-  Widget _buildRecentPlaces() {
-    if (_recentPlaces.isEmpty) {
-      return Container(); // 최근 방문 장소가 없으면 표시하지 않음
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              '최근 방문 장소',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const VisitHistoryScreen(),
-                  ),
-                );
-              },
-              child: const Text(
-                '더보기',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 200,
-          child: PageView.builder(
-            controller: PageController(viewportFraction: 0.85),
-            onPageChanged: (index) {
-              setState(() {
-                _currentCarouselIndex = index % _recentPlaces.length;
-              });
-            },
-            itemBuilder: (context, index) {
-              final realIndex = index % _recentPlaces.length;
-              final place = _recentPlaces[realIndex];
-              return _buildPlaceCard(place);
-            },
-            itemCount: _recentPlaces.length * 100, // 무한 스크롤 효과
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(
-            _recentPlaces.length,
-                (index) => Container(
-              width: 8,
-              height: 8,
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _currentCarouselIndex == index
-                    ? Colors.black
-                    : Colors.grey[300],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 32),
-      ],
-    );
+// 오버플로우 오류 수정을 위한 SizedBox 높이 조정
+// _buildRecentPlaces 메서드에서 수정해야 할 부분
+Widget _buildRecentPlaces() {
+  if (_recentPlaces.isEmpty) {
+    return Container(); // 최근 방문 장소가 없으면 표시하지 않음
   }
 
-  Widget _buildPlaceCard(VisitHistory place) {
-    return Container(
-      margin: const EdgeInsets.only(right: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text(
+            '최근 방문 장소',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const VisitHistoryScreen(),
+                ),
+              );
+            },
+            child: const Text(
+              '더보기',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
-      child: InkWell(
-        onTap: () {
-          // 장소 상세 정보 또는 내비게이션 화면으로 이동
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      const SizedBox(height: 16),
+      // 높이를 늘려서 오버플로우 오류 해결
+      SizedBox(
+        height: 224, // 기존 200에서 224로 늘림
+        child: PageView.builder(
+          controller: PageController(viewportFraction: 0.85),
+          onPageChanged: (index) {
+            setState(() {
+              _currentCarouselIndex = index % _recentPlaces.length;
+            });
+          },
+          itemBuilder: (context, index) {
+            final realIndex = index % _recentPlaces.length;
+            final place = _recentPlaces[realIndex];
+            return _buildPlaceCard(place);
+          },
+          itemCount: _recentPlaces.length * 100, // 무한 스크롤 효과
+        ),
+      ),
+      const SizedBox(height: 16),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(
+          _recentPlaces.length,
+              (index) => Container(
+            width: 8,
+            height: 8,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _currentCarouselIndex == index
+                  ? Colors.black
+                  : Colors.grey[300],
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 32),
+    ],
+  );
+}
+
+Widget _buildPlaceCard(VisitHistory place) {
+  // 카테고리별 색상 지정
+  final Map<String, Color> categoryColors = {
+    '식당': Colors.redAccent.shade100,
+    '카페': Colors.brown.shade200,
+    '쇼핑': Colors.blueAccent.shade100,
+    '관광': Colors.green.shade200,
+    '문화': Colors.purpleAccent.shade100,
+    '병원': Colors.teal.shade200,
+    '편의점': Colors.orange.shade200,
+    '아이스크림 가게': Colors.pink.shade200,
+  };
+
+  // 장소 이름의 첫 글자 가져오기
+  final String initial = place.placeName.isNotEmpty 
+      ? place.placeName.substring(0, 1).toUpperCase() 
+      : '?';
+      
+  // 카테고리에 해당하는 색상 가져오기 (없으면 랜덤 색상)
+  final color = categoryColors[place.category] ?? 
+      Color((Random().nextDouble() * 0xFFFFFF).toInt() | 0xFF000000).withAlpha(153); // 0.6 * 255 = 153
+
+   return Container(
+    margin: const EdgeInsets.only(right: 16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withAlpha(13),
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    ),
+    child: InkWell(
+      onTap: () {
+        // 장소 상세 정보 또는 내비게이션 화면으로 이동
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 120,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  color.withAlpha(179),
+                  color,
+                ],
               ),
-              child: Center(
-                child: Icon(
-                  _getCategoryIcon(place.category),
-                  size: 40,
-                  color: Colors.black54,
-                ),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // 배경과 대비되는 텍스트 아바타
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withAlpha(204),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        initial,
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: color.withAlpha(230),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // 카테고리 아이콘
+                  Icon(
+                    _getCategoryIcon(place.category),
+                    size: 24,
+                    color: Colors.white,
+                  ),
+                ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(16),
+          ),
+          // 텍스트 부분 높이 제한 및 최적화
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min, // 최소 크기로 설정
                 children: [
                   Text(
                     place.placeName,
@@ -1056,11 +1118,15 @@ Future<void> _loadData() async {
                     children: [
                       Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
                       const SizedBox(width: 4),
-                      Text(
-                        _formatDate(place.visitDate),
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
+                      Expanded(
+                        child: Text(
+                          _formatDate(place.visitDate),
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -1068,11 +1134,12 @@ Future<void> _loadData() async {
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildRecommendedPlaces() {
     if (_recommendedPlaces.isEmpty) {
@@ -1132,76 +1199,108 @@ Future<void> _loadData() async {
     );
   }
 
-  Widget _buildRecommendedPlaceCard(RecommendedPlace place) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+Widget _buildRecommendedPlaceCard(RecommendedPlace place) {
+  return Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withAlpha(13),
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    ),
+    child: InkWell(
+      onTap: () {
+        // 장소 상세 정보 또는 내비게이션 화면으로 이동
+        _navigateToPlaceDetails(place);
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: place.photoUrl.isNotEmpty 
+                  ? ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                      child: Image.network(
+                        place.photoUrl,
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                        // 이미지 로딩 중에 표시할 위젯
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded / 
+                                      loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          );
+                        },
+                        // 이미지 로딩 오류 시 표시할 위젯
+                        errorBuilder: (context, error, stackTrace) {
+                          print('이미지 로딩 오류: $error');
+                          return Center(
+                            child: Icon(
+                              _getCategoryIcon(place.category),
+                              size: 32,
+                              color: Colors.black54,
+                            ),
+                          );
+                        },
+                      ),
+                    )
+                  : Center(
+                      child: Icon(
+                        _getCategoryIcon(place.category),
+                        size: 32,
+                        color: Colors.black54,
+                      ),
+                    ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  place.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  place.category,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
         ],
       ),
-      child: InkWell(
-        onTap: () {
-          // 장소 상세 정보 또는 내비게이션 화면으로 이동
-          _navigateToPlaceDetails(place);
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                child: Center(
-                  child: Icon(
-                    _getCategoryIcon(place.category),
-                    size: 32,
-                    color: Colors.black54,
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    place.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    place.category,
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
+    ),
+  );
+}
   Widget _buildPopularCategories() {
     if (_popularCategories.isEmpty) {
       return Container(); // 인기 카테고리가 없으면 표시하지 않음
@@ -1264,147 +1363,197 @@ Future<void> _loadData() async {
     );
   }
 
-  void _navigateToPlaceDetails(RecommendedPlace place) async {
-    // 장소 상세 정보 또는 내비게이션 화면으로 이동
-    try {
-      final locationProvider = Provider.of<LocationProvider>(context, listen: false);
-      final currentLocation = await locationProvider.getCurrentLocation();
-
-      if (mounted) {
-        // 간단한 다이얼로그 표시
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          builder: (context) {
-            return Container(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[100],
-                          borderRadius: BorderRadius.circular(12),
+// _navigateToPlaceDetails 메서드도 업데이트하여 이미지 표시
+void _navigateToPlaceDetails(RecommendedPlace place) async {
+  // 기존 코드...
+  
+  // 모달 바텀 시트 부분에 이미지 표시 추가
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (context) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 이미지가 있으면 표시, 없으면 아이콘 표시
+            if (place.photoUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  place.photoUrl,
+                  height: 180,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return SizedBox(
+                      height: 180,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded / 
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
                         ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      height: 180,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Center(
                         child: Icon(
                           _getCategoryIcon(place.category),
+                          size: 48,
+                          color: Colors.black45,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              )
+            else
+              Container(
+                height: 180,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Icon(
+                    _getCategoryIcon(place.category),
+                    size: 48,
+                    color: Colors.black45,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    _getCategoryIcon(place.category),
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        place.name,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        place.category,
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              place.address,
+              style: const TextStyle(fontSize: 14),
+            ),
+            if (place.reasonForRecommendation.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.lightbulb, color: Colors.amber),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        place.reasonForRecommendation,
+                        style: const TextStyle(
                           color: Colors.black87,
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              place.name,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              place.category,
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    place.address,
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                  if (place.reasonForRecommendation.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.lightbulb, color: Colors.amber),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              place.reasonForRecommendation,
-                              style: const TextStyle(
-                                color: Colors.black87,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            // 방문 기록에 추가 (향후 구현)
-                          },
-                          icon: const Icon(Icons.bookmark_border),
-                          label: const Text('저장'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.black,
-                            side: const BorderSide(color: Colors.black),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            // 내비게이션 화면으로 이동 (향후 구현)
-                          },
-                          icon: const Icon(Icons.directions),
-                          label: const Text('길찾기'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.black,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            elevation: 0,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
-            );
-          },
-        );
-      }
-    } catch (e) {
-      print('위치 가져오기 실패: $e');
-    }
-  }
+            ],
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // 방문 기록에 추가 (향후 구현)
+                    },
+                    icon: const Icon(Icons.bookmark_border),
+                    label: const Text('저장'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.black,
+                      side: const BorderSide(color: Colors.black),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // 내비게이션 화면으로 이동 (향후 구현)
+                    },
+                    icon: const Icon(Icons.directions),
+                    label: const Text('길찾기'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
   void _navigateToCategoryPlaces(String category) async {
     try {
