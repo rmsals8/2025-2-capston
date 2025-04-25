@@ -44,29 +44,59 @@ class _MainNavigationState extends State<MainNavigation> {
     });
   }
   
-  Future<void> _checkFirstLogin() async {
-    // 약간의 지연을 주어 화면 전환이 자연스럽게 하기
-    await Future.delayed(const Duration(milliseconds: 100));
+  // lib/screens/main_navigation.dart의 _checkFirstLogin 메서드 수정
+
+Future<void> _checkFirstLogin() async {
+  // 약간의 지연을 주어 화면 전환이 자연스럽게 하기
+  await Future.delayed(const Duration(milliseconds: 100));
+  
+  if (!mounted) return;
+  
+  // SharedPreferences에서 직접 확인
+  final prefs = await SharedPreferences.getInstance();
+  
+  // 현재 사용자 ID 가져오기
+  final userId = prefs.getString('user_id');
+  
+  // 사용자별 첫 로그인 상태 키 생성
+  final String userFirstLoginKey = userId != null && userId.isNotEmpty 
+      ? 'user_first_login_$userId' 
+      : 'is_first_login'; // 대체 키
+      
+  // 사용자별 첫 로그인 상태 확인
+  bool isFirstLogin = false;
+  
+  // 사용자별 설정이 있으면 그것을 사용
+  if (prefs.containsKey(userFirstLoginKey)) {
+    isFirstLogin = prefs.getBool(userFirstLoginKey) ?? false;
+    print('사용자 $userId의 첫 로그인 상태: $isFirstLogin (사용자별 설정)');
+  } else {
+    // 없으면 일반 설정 사용
+    isFirstLogin = prefs.getBool('is_first_login') ?? false;
     
-    if (!mounted) return;
-    
-    // SharedPreferences에서 직접 확인
-    final prefs = await SharedPreferences.getInstance();
-    final isFirstLogin = prefs.getBool('is_first_login') ?? false;
-    
-    print('MainNavigation: 첫 로그인 확인 - $isFirstLogin');
-    
-    if (isFirstLogin && mounted) {
-      print('첫 로그인 감지: 카테고리 선호도 화면으로 이동합니다.');
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => const CategoryPreferenceScreen(isFirstLogin: true),
-        ),
-      );
-    } else {
-      print('첫 로그인 아님: 일반 메인 화면을 표시합니다.');
+    // 사용자별 설정도 함께 저장 (동기화)
+    if (userId != null && userId.isNotEmpty) {
+      await prefs.setBool(userFirstLoginKey, isFirstLogin);
+      print('사용자 $userId의 첫 로그인 상태 생성: $isFirstLogin');
     }
+    
+    print('일반 첫 로그인 상태: $isFirstLogin');
   }
+  
+  // is_first_login에도 현재 상태 저장 (다른 화면과의 호환성 유지)
+  await prefs.setBool('is_first_login', isFirstLogin);
+  
+  if (isFirstLogin && mounted) {
+    print('첫 로그인 감지: 카테고리 선호도 화면으로 이동합니다.');
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const CategoryPreferenceScreen(isFirstLogin: true),
+      ),
+    );
+  } else {
+    print('첫 로그인 아님: 일반 메인 화면을 표시합니다.');
+  }
+}
 
   @override
   void dispose() {

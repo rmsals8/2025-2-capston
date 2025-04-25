@@ -572,131 +572,145 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
   
   // 회원가입 완료
-  Future<void> _handleCompleteSignup() async {
-    if (_nameController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('이름을 입력해주세요')),
-      );
-      return;
-    }
+  // 회원가입 완료
+Future<void> _handleCompleteSignup() async {
+  if (_nameController.text.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('이름을 입력해주세요')),
+    );
+    return;
+  }
 
-    if (_passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('비밀번호를 입력해주세요')),
-      );
-      return;
-    }
+  if (_passwordController.text.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('비밀번호를 입력해주세요')),
+    );
+    return;
+  }
 
-    if (_passwordController.text.length < 8) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('비밀번호는 8자 이상이어야 합니다')),
-      );
-      return;
-    }
+  if (_passwordController.text.length < 8) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('비밀번호는 8자 이상이어야 합니다')),
+    );
+    return;
+  }
 
-    if (_passwordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('비밀번호가 일치하지 않습니다')),
-      );
-      return;
-    }
+  if (_passwordController.text != _confirmPasswordController.text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('비밀번호가 일치하지 않습니다')),
+    );
+    return;
+  }
 
-    if (!_agreeToTerms) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('서비스 이용약관에 동의해주세요')),
-      );
-      return;
-    }
+  if (!_agreeToTerms) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('서비스 이용약관에 동의해주세요')),
+    );
+    return;
+  }
 
-    setState(() {
-      _isLoading = true;
-    });
+  setState(() {
+    _isLoading = true;
+  });
 
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/auth/complete-signup'),
-        body: json.encode({
-          'email': _emailController.text,
-          'password': _passwordController.text,
-          'name': _nameController.text,
-          'verificationToken': _verificationToken,
-          'termsAgreed': _agreeToTerms,
-          'marketingAgreed': _agreeToMarketing
-        }),
-        headers: {'Content-Type': 'application/json'},
-      );
+  try {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/complete-signup'),
+      body: json.encode({
+        'email': _emailController.text,
+        'password': _passwordController.text,
+        'name': _nameController.text,
+        'verificationToken': _verificationToken,
+        'termsAgreed': _agreeToTerms,
+        'marketingAgreed': _agreeToMarketing
+      }),
+      headers: {'Content-Type': 'application/json'},
+    );
 
-      print('회원가입 완료 응답 상태 코드: ${response.statusCode}');
-      print('회원가입 완료 응답 내용: ${response.body}');
+    print('회원가입 완료 응답 상태 코드: ${response.statusCode}');
+    print('회원가입 완료 응답 내용: ${response.body}');
 
-      if (response.statusCode == 200) {
-        final authResponse = json.decode(response.body);
+    if (response.statusCode == 200) {
+      final authResponse = json.decode(response.body);
 
-        // 사용자 정보 및 토큰 저장
-        final prefs = await SharedPreferences.getInstance();
+      // 사용자 정보 및 토큰 저장
+      final prefs = await SharedPreferences.getInstance();
 
-        if (authResponse['accessToken'] != null) {
-          await prefs.setString('access_token', authResponse['accessToken']);
-        }
-        if (authResponse['refreshToken'] != null) {
-          await prefs.setString('refresh_token', authResponse['refreshToken']);
-        }
+      if (authResponse['accessToken'] != null) {
+        await prefs.setString('access_token', authResponse['accessToken']);
+      }
+      if (authResponse['refreshToken'] != null) {
+        await prefs.setString('refresh_token', authResponse['refreshToken']);
+      }
 
-        if (authResponse['userProfile'] != null) {
-          final userProfile = authResponse['userProfile'];
+      String userId = "";
+      if (authResponse['userProfile'] != null) {
+        final userProfile = authResponse['userProfile'];
 
-          if (userProfile['id'] != null) {
-            await prefs.setString('user_id', userProfile['id'].toString());
-          }
-
-          if (userProfile['name'] != null) {
-            await prefs.setString('user_name', userProfile['name']);
-          } else {
-            await prefs.setString('user_name', _nameController.text);
-          }
-
-          if (userProfile['email'] != null) {
-            await prefs.setString('user_email', userProfile['email']);
-          } else {
-            await prefs.setString('user_email', _emailController.text);
-          }
+        if (userProfile['id'] != null) {
+          userId = userProfile['id'].toString();
+          await prefs.setString('user_id', userId);
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('회원가입에 성공했습니다!')),
-        );
-
-        // 메인 화면으로 이동
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const MainNavigation()),
-          );
-        }
-      } else {
-        setState(() {
-          _isLoading = false;
-        });
-
-        final errorResponse = json.decode(response.body);
-        String errorMessage = '회원가입에 실패했습니다';
-
-        if (errorResponse['message'] != null) {
-          errorMessage = errorResponse['message'];
+        if (userProfile['name'] != null) {
+          await prefs.setString('user_name', userProfile['name']);
+        } else {
+          await prefs.setString('user_name', _nameController.text);
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
+        if (userProfile['email'] != null) {
+          await prefs.setString('user_email', userProfile['email']);
+        } else {
+          await prefs.setString('user_email', _emailController.text);
+        }
+      }
+
+      // 첫 로그인 상태를 명시적으로 true로 설정 (핵심 수정 부분)
+      await prefs.setBool('is_first_login', true);
+      print('회원가입 완료: 첫 로그인 상태를 true로 설정');
+      
+      // 사용자별 첫 로그인 상태도 함께 설정
+      if (userId.isNotEmpty) {
+        final userFirstLoginKey = 'user_first_login_$userId';
+        await prefs.setBool(userFirstLoginKey, true);
+        print('회원가입 완료: 사용자 $userId의 첫 로그인 상태를 true로 설정');
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('회원가입에 성공했습니다!')),
+      );
+
+      // 메인 화면으로 이동
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MainNavigation()),
         );
       }
-    } catch (e) {
+    } else {
       setState(() {
         _isLoading = false;
       });
 
+      final errorResponse = json.decode(response.body);
+      String errorMessage = '회원가입에 실패했습니다';
+
+      if (errorResponse['message'] != null) {
+        errorMessage = errorResponse['message'];
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('회원가입 처리 중 오류가 발생했습니다: $e')),
+        SnackBar(content: Text(errorMessage)),
       );
     }
+  } catch (e) {
+    setState(() {
+      _isLoading = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('회원가입 처리 중 오류가 발생했습니다: $e')),
+    );
   }
+}
 }

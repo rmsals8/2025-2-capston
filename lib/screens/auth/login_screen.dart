@@ -274,6 +274,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+// lib/screens/auth/login_screen.dart 수정
 void _handleLogin() async {
   if (_formKey.currentState?.validate() ?? false) {
     setState(() {
@@ -314,11 +315,13 @@ void _handleLogin() async {
         await prefs.setString('refresh_token', authResponse['refreshToken']);
 
         // 사용자 정보 저장
+        String userId = "";
         if (authResponse['userProfile'] != null) {
           final userProfile = authResponse['userProfile'];
           
           if (userProfile['id'] != null) {
-            await prefs.setString('user_id', userProfile['id'].toString());
+            userId = userProfile['id'].toString();
+            await prefs.setString('user_id', userId);
           }
           
           if (userProfile['name'] != null) {
@@ -336,24 +339,28 @@ void _handleLogin() async {
             // 일반 로그인 시 loginType이 없으면 0으로 설정
             await prefs.setInt('login_type', 0);
           }
-          
-          // 첫 로그인 상태 설정 (핵심 변경 부분)
-          // 서버에서 isFirstLogin 정보를 제공하는 경우
-          if (userProfile['isFirstLogin'] != null) {
-            await prefs.setBool('is_first_login', userProfile['isFirstLogin']);
-            print('서버에서 받은 첫 로그인 상태: ${userProfile['isFirstLogin']}');
-          } else {
-            // 서버에서 해당 정보를 제공하지 않는 경우, 가입일자 기반으로 판단하거나 기본값 설정
-            // 테스트를 위해 일단 true로 설정
-            await prefs.setBool('is_first_login', true);
-            print('첫 로그인 상태를 true로 설정 (테스트용)');
-          }
         } else {
           // userProfile이 없는 경우 기본값 설정
           await prefs.setInt('login_type', 0);
-          // 첫 로그인 상태도 설정 (추가된 부분)
+        }
+
+        // 첫 로그인 상태 확인 및 설정 (핵심 변경 부분)
+        // 사용자별 첫 로그인 상태를 확인하는 키를 생성
+        final String firstLoginKey = 'user_first_login_$userId';
+        
+        // 이미 이 사용자에 대한 첫 로그인 상태가 있는지 확인
+        final bool hasFirstLoginRecord = prefs.containsKey(firstLoginKey);
+        
+        if (hasFirstLoginRecord) {
+          // 이미 기록이 있으면 기존 값 사용 (대부분 false일 것임)
+          final isFirstLogin = prefs.getBool(firstLoginKey) ?? false;
+          await prefs.setBool('is_first_login', isFirstLogin);
+          print('사용자 $userId의 첫 로그인 상태 불러옴: $isFirstLogin');
+        } else {
+          // 기록이 없으면 이 사용자의 첫 로그인으로 간주
+          await prefs.setBool(firstLoginKey, true);
           await prefs.setBool('is_first_login', true);
-          print('userProfile이 없어 첫 로그인 상태를 true로 설정');
+          print('사용자 $userId의 첫 로그인 상태를 true로 설정 (최초 로그인)');
         }
 
         if (mounted) {

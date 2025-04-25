@@ -1,13 +1,16 @@
 // lib/providers/auth_provider.dart
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:convert';
 
 class AuthProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _isLoggedIn = false;
   bool _isFirstLogin = false;  // 첫 로그인 상태 추가
-
+  final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8081/api/v1';
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isLoggedIn => _isLoggedIn;
@@ -31,66 +34,83 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> login({
-    required String email,
-    required String password,
-    bool rememberMe = false,
-  }) async {
-    try {
-      _setLoading(true);
+  required String email,
+  required String password,
+  bool rememberMe = false,
+}) async {
+  try {
+    _setLoading(true);
 
-      // TODO: API 호출하여 로그인 처리
-      // 임시로 토큰 저장
+    // 실제 API 호출 구현
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'email': email,
+        'password': password,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      
+      // 서버에서 받은 실제 토큰 저장
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('access_token', 'dummy_token');
-
-      // Also store user ID (in a real app, this would come from the server)
-      // For demonstration, we'll use the email as the user ID
-      await prefs.setString('user_id', email.split('@')[0]);
-
-      // Store user email
+      await prefs.setString('access_token', data['accessToken']);
+      await prefs.setString('refresh_token', data['refreshToken']);
+      await prefs.setString('user_id', data['userId']);
       await prefs.setString('user_email', email);
-
-      // Extract and store user name from email
-      String nameFromEmail = email.split('@')[0];
-      nameFromEmail = nameFromEmail
-          .replaceAll('.', ' ')
-          .replaceAll('_', ' ')
-          .split(' ')
-          .map((word) => word.isNotEmpty
-          ? word[0].toUpperCase() + word.substring(1)
-          : '')
-          .join(' ');
-      await prefs.setString('user_name', nameFromEmail);
-
+      await prefs.setString('user_name', data['name']);
+      
       if (rememberMe) {
         await prefs.setBool('remember_me', true);
       }
 
-      _isLoggedIn = true;
-      _isFirstLogin = true;  // 로그인 성공 시 첫 로그인으로 간주
+      // 첫 로그인 여부 확인 (서버에서 제공하거나 로컬 로직으로 판단)
+      final isFirstTimeUser = data['isFirstTimeUser'] ?? false;
+      await prefs.setBool('is_first_login', isFirstTimeUser);
       
-      // 첫 로그인 상태 저장
-      await prefs.setBool('is_first_login', true);
+      _isLoggedIn = true;
+      _isFirstLogin = isFirstTimeUser;
       
       notifyListeners();
-    } catch (e) {
-      _setError('로그인에 실패했습니다');
-    } finally {
-      _setLoading(false);
+    } else {
+      // 로그인 실패 처리
+      final errorData = json.decode(response.body);
+      throw Exception(errorData['message'] ?? '로그인에 실패했습니다');
     }
+  } catch (e) {
+    _setError('로그인에 실패했습니다: ${e.toString()}');
+  } finally {
+    _setLoading(false);
   }
+}
 
   // 첫 로그인 상태 업데이트 메서드 추가
-  Future<void> updateFirstLoginStatus(bool isFirst) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('is_first_login', isFirst);
-      _isFirstLogin = isFirst;
-      notifyListeners();
-    } catch (e) {
-      print('첫 로그인 상태 업데이트 오류: $e');
+// 첫 로그인 상태 업데이트 메서드 수정
+Future<void> updateFirstLoginStatus(bool isFirst) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // 현재 로그인된 사용자 ID 가져오기
+    final userId = prefs.getString('user_id');
+    
+    // 일반 첫 로그인 상태 업데이트
+    await prefs.setBool('is_first_login', isFirst);
+    _isFirstLogin = isFirst;
+    
+    // 사용자별 첫 로그인 상태도 업데이트 (userId가 있는 경우)
+    if (userId != null && userId.isNotEmpty) {
+      final String userFirstLoginKey = 'user_first_login_$userId';
+      await prefs.setBool(userFirstLoginKey, isFirst);
+      print('사용자 $userId의 첫 로그인 상태를 $isFirst로 업데이트');
     }
+    
+    notifyListeners();
+  } catch (e) {
+    print('첫 로그인 상태 업데이트 오류: $e');
   }
+}
 
   Future<void> register({
     required String email,
@@ -122,31 +142,36 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<void> logout() async {
-    try {
-      _setLoading(true);
+// 로그아웃 메서드 수정
+Future<void> logout() async {
+  try {
+    _setLoading(true);
 
-      final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
+    
+    // 현재 사용자 ID 저장 (나중에 사용)
+    final userId = prefs.getString('user_id');
 
-      // 모든 사용자 관련 정보 삭제
-      await prefs.remove('access_token');
-      await prefs.remove('refresh_token');
-      await prefs.remove('user_id');
-      await prefs.remove('user_name');
-      await prefs.remove('user_email');
-      await prefs.remove('remember_me');
-      
-      // 첫 로그인 상태는 유지 (다음 로그인에 대비)
-      // await prefs.remove('is_first_login');
+    // 모든 사용자 관련 정보 삭제
+    await prefs.remove('access_token');
+    await prefs.remove('refresh_token');
+    await prefs.remove('user_id');
+    await prefs.remove('user_name');
+    await prefs.remove('user_email');
+    await prefs.remove('remember_me');
+    
+    // 첫 로그인 상태는 제거 (다음 로그인 시 사용자별 상태 사용)
+    await prefs.remove('is_first_login');
 
-      _isLoggedIn = false;
-      notifyListeners();
-    } catch (e) {
-      _setError('로그아웃에 실패했습니다');
-    } finally {
-      _setLoading(false);
-    }
+    _isLoggedIn = false;
+    _isFirstLogin = false;
+    notifyListeners();
+  } catch (e) {
+    _setError('로그아웃에 실패했습니다');
+  } finally {
+    _setLoading(false);
   }
+}
 
   Future<void> refreshToken() async {
     try {

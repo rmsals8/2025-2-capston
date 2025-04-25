@@ -1,6 +1,7 @@
 // lib/screens/auth/category_preference_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trip_helper/screens/main_navigation.dart';
 import '../../models/category_data.dart';
 import '../../providers/auth_provider.dart';
@@ -346,61 +347,72 @@ class _CategoryPreferenceScreenState extends State<CategoryPreferenceScreen> {
     );
   }
   
-// 선호도 저장 함수
-  Future<void> _savePreferences() async {
-    if (_selectedCategories.length < _minCategories) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('최소 ${_minCategories}개 이상의 카테고리를 선택해주세요.')),
-      );
-      return;
+// lib/screens/auth/category_preference_screen.dart의 _savePreferences 메서드 수정
+
+Future<void> _savePreferences() async {
+  if (_selectedCategories.length < _minCategories) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('최소 ${_minCategories}개 이상의 카테고리를 선택해주세요.')),
+    );
+    return;
+  }
+  
+  setState(() {
+    _isLoading = true;
+  });
+  
+  try {
+    // 사용자 선호도 저장
+    final prefProvider = Provider.of<UserPreferenceProvider>(context, listen: false);
+    await prefProvider.savePreferredCategories(_selectedCategories.toList());
+    
+    // 첫 로그인 상태 업데이트
+    if (widget.isFirstLogin) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.updateFirstLoginStatus(false);
+      
+      // 사용자별 첫 로그인 상태도 직접 업데이트 (이중 보호)
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id');
+      if (userId != null && userId.isNotEmpty) {
+        final String userFirstLoginKey = 'user_first_login_$userId';
+        await prefs.setBool(userFirstLoginKey, false);
+        await prefs.setBool('is_first_login', false);
+        print('카테고리 선택 완료: 사용자 $userId의 첫 로그인 상태를 false로 영구 설정');
+      }
     }
     
-    setState(() {
-      _isLoading = true;
-    });
+    // 완료 알림
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('선호 카테고리가 저장되었습니다.')),
+      );
+    }
     
-    try {
-      // 사용자 선호도 저장
-      final prefProvider = Provider.of<UserPreferenceProvider>(context, listen: false);
-      await prefProvider.savePreferredCategories(_selectedCategories.toList());
-      
-      // 첫 로그인 상태 업데이트
-      if (widget.isFirstLogin) {
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        await authProvider.updateFirstLoginStatus(false);
-      }
-      
-      // 완료 알림
+    // 첫 로그인인 경우 홈 화면으로 이동, 아니면 이전 화면으로 돌아가기
+    if (widget.isFirstLogin) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('선호 카테고리가 저장되었습니다.')),
-        );
-      }
-      
-      // 첫 로그인인 경우 홈 화면으로 이동, 아니면 이전 화면으로 돌아가기
-      if (widget.isFirstLogin) {
-        if (mounted) {
-           Navigator.of(context).pushReplacement(
+        Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const MainNavigation()),
           );
-        }
-      } else {
-        if (mounted) {
-          Navigator.of(context).pop();
-        }
       }
-    } catch (e) {
+    } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('저장 중 오류가 발생했습니다: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        Navigator.of(context).pop();
       }
     }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('저장 중 오류가 발생했습니다: $e')),
+      );
+    }
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
+}
 }
