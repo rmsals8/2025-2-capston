@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:trip_helper/providers/auth_provider.dart';
 
 import '../../providers/location_provider.dart';
 import '../../services/visit_history_service.dart';
@@ -26,6 +27,10 @@ import '../recommendations/history_based_recommendations_screen.dart';
 import '../profile/visit_history_screen.dart';
 import '../place_recommendations_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
+
+import '../../models/category_data.dart';
+import '../../providers/user_preference_provider.dart';
+import '../auth/category_preference_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -56,13 +61,24 @@ class _HomeScreenState extends State<HomeScreen> {
   List<VisitHistory> _recentPlaces = [];
   List<RecommendedPlace> _recommendedPlaces = [];
   List<String> _popularCategories = [];
-
+  List<String> _userPreferredCategories = [];
   @override
   void initState() {
     super.initState();
     _initializeServices();
     _loadData();
     _initSpeech();
+      _loadUserPreferences(); 
+  }
+    // 사용자 선호도 불러오기
+  Future<void> _loadUserPreferences() async {
+    try {
+      final prefProvider = Provider.of<UserPreferenceProvider>(context, listen: false);
+      _userPreferredCategories = await prefProvider.getPreferredCategories();
+      print('사용자 선호 카테고리: $_userPreferredCategories');
+    } catch (e) {
+      print('선호도 불러오기 오류: $e');
+    }
   }
 
   // 새로운 음성 인식 초기화 메소드
@@ -651,79 +667,102 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
     print('위치 권한 상태: $locationStatus'); // 한글 로그
   }
 
+// _loadData 메서드 수정 - 선호 카테고리 기반 추천 추가
+  // lib/screens/home/home_screen.dart의 _loadData 메서드 수정
+
 Future<void> _loadData() async {
-    print('Loading home screen data...'); // 영어 로그
-    print('홈 화면 데이터 로드 중...'); // 한글 로그
+  print('Loading home screen data...'); // 영어 로그
+  print('홈 화면 데이터 로드 중...'); // 한글 로그
 
-    setState(() {
-      _isLoading = true;
-    });
+  setState(() {
+    _isLoading = true;
+  });
 
-    try {
-      // 현재 위치 가져오기
-      final locationProvider = Provider.of<LocationProvider>(context, listen: false);
-      final currentLocation = await locationProvider.getCurrentLocation();
-      print('Current location retrieved: ${currentLocation.latitude}, ${currentLocation.longitude}'); // 영어 로그
-      print('현재 위치 정보 획득: ${currentLocation.latitude}, ${currentLocation.longitude}'); // 한글 로그
+  try {
+    // 현재 위치 가져오기
+    final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+    final currentLocation = await locationProvider.getCurrentLocation();
+    print('Current location retrieved: ${currentLocation.latitude}, ${currentLocation.longitude}'); // 영어 로그
+    print('현재 위치 정보 획득: ${currentLocation.latitude}, ${currentLocation.longitude}'); // 한글 로그
 
-      // 최근 방문 장소 불러오기 (최대 5개)
-      _recentPlaces = await _historyService.getRecentlyVisitedPlaces(limit: 5);
-      print('Retrieved ${_recentPlaces.length} recent places'); // 영어 로그
-      print('최근 방문 장소 ${_recentPlaces.length}개 로드 완료'); // 한글 로그
+    // 최근 방문 장소 불러오기 (최대 5개)
+    _recentPlaces = await _historyService.getRecentlyVisitedPlaces(limit: 5);
+    print('Retrieved ${_recentPlaces.length} recent places'); // 영어 로그
+    print('최근 방문 장소 ${_recentPlaces.length}개 로드 완료'); // 한글 로그
 
-      // 카테고리 통계 계산
-      final Map<String, int> categoryCounts = {};
-      final allHistories = await _historyService.getVisitHistories();
-      print('Retrieved ${allHistories.length} visit histories for category analysis'); // 영어 로그
-      print('카테고리 분석을 위해 ${allHistories.length}개의 방문 기록 로드 완료'); // 한글 로그
+    // 카테고리 통계 계산
+    final Map<String, int> categoryCounts = {};
+    final allHistories = await _historyService.getVisitHistories();
+    print('Retrieved ${allHistories.length} visit histories for category analysis'); // 영어 로그
+    print('카테고리 분석을 위해 ${allHistories.length}개의 방문 기록 로드 완료'); // 한글 로그
 
-      for (var history in allHistories) {
-        categoryCounts[history.category] = (categoryCounts[history.category] ?? 0) + 1;
-      }
+    for (var history in allHistories) {
+      categoryCounts[history.category] = (categoryCounts[history.category] ?? 0) + 1;
+    }
 
-// 상위 인기 카테고리 추출 (내림차순 정렬)
-      List<MapEntry<String, int>> sortedCategories = categoryCounts.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
+    // 상위 인기 카테고리 추출 (내림차순 정렬)
+    List<MapEntry<String, int>> sortedCategories = categoryCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
 
-      _popularCategories = sortedCategories.take(5).map((e) => e.key).toList();
-      print('Popular categories: $_popularCategories'); // 영어 로그
-      print('인기 카테고리 목록: $_popularCategories'); // 한글 로그
+    _popularCategories = sortedCategories.take(5).map((e) => e.key).toList();
+    print('Popular categories: $_popularCategories'); // 영어 로그
+    print('인기 카테고리 목록: $_popularCategories'); // 한글 로그
 
-      // 추천 장소 가져오기
-      if (_recentPlaces.isNotEmpty) {
-        // 방문 기록 기반 추천
-        _recommendedPlaces = await _recommendationService.getRecommendationsBasedOnHistory(
-          currentLocation,
-          limit: 4, // 홈 화면에는 적은 개수만 표시
-          radius: 10000, // 반경 10km
-        );
-        print('Retrieved ${_recommendedPlaces.length} recommended places based on history'); // 영어 로그
-        print('방문 기록 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
-      } else {
-        // 위치 기반 추천 (방문 기록이 없는 경우)
-        _recommendedPlaces = await _recommendationService.getNearbyPlaces(
-          currentLocation,
-          limit: 4,
-          radius: 5000, // 반경 5km
-        );
-        print('Retrieved ${_recommendedPlaces.length} recommended places based on location'); // 영어 로그
-        print('위치 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
-      }
+    // 사용자 선호 카테고리 가져오기 (새로 추가된 부분)
+    final prefProvider = Provider.of<UserPreferenceProvider>(context, listen: false);
+    final preferredCategories = await prefProvider.getPreferredCategories();
+    print('User preferred categories: ${preferredCategories.join(", ")}'); // 영어 로그
+    print('사용자 선호 카테고리: ${preferredCategories.join(", ")}'); // 한글 로그
 
-    } catch (e) {
-      print('Error loading home screen data: $e'); // 영어 로그
-      print('홈 화면 데이터 로드 오류: $e'); // 한글 로그
-      // 오류 메시지를 표시하지 않고 빈 상태로 표시
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+    // 추천 장소 가져오기
+    if (preferredCategories.isNotEmpty) {
+      // 선호 카테고리 기반 추천 (우선순위 1)
+      print('Using preferred categories for recommendations'); // 영어 로그
+      print('선호 카테고리 기반으로 추천 장소 가져오기'); // 한글 로그
+      
+      _recommendedPlaces = await _recommendationService.getHomeScreenRecommendations(
+        currentLocation,
+        limit: 4,
+        radius: 10000, // 반경 10km
+        preferredCategories: preferredCategories,
+      );
+      
+      print('Retrieved ${_recommendedPlaces.length} recommended places based on preferences'); // 영어 로그
+      print('선호 카테고리 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
+    } else if (_recentPlaces.isNotEmpty) {
+      // 방문 기록 기반 추천 (우선순위 2)
+      _recommendedPlaces = await _recommendationService.getRecommendationsBasedOnHistory(
+        currentLocation,
+        limit: 4, // 홈 화면에는 적은 개수만 표시
+        radius: 10000, // 반경 10km
+      );
+      print('Retrieved ${_recommendedPlaces.length} recommended places based on history'); // 영어 로그
+      print('방문 기록 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
+    } else {
+      // 위치 기반 추천 (우선순위 3 - 방문 기록 및 선호 카테고리가 없는 경우)
+      _recommendedPlaces = await _recommendationService.getNearbyPlaces(
+        currentLocation,
+        limit: 4,
+        radius: 5000, // 반경 5km
+      );
+      print('Retrieved ${_recommendedPlaces.length} recommended places based on location'); // 영어 로그
+      print('위치 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
+    }
+
+  } catch (e) {
+    print('Error loading home screen data: $e'); // 영어 로그
+    print('홈 화면 데이터 로드 오류: $e'); // 한글 로그
+    // 오류 메시지를 표시하지 않고 빈 상태로 표시
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
+}
 
-  @override
+ @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
@@ -743,6 +782,7 @@ Future<void> _loadData() async {
                   const SizedBox(height: 24),
                   _buildSearchBar(),
                   const SizedBox(height: 32),
+                  _buildPreferredCategories(), // 선호 카테고리 섹션 추가
                   _buildRecentPlaces(),
                   _buildRecommendedPlaces(),
                   _buildPopularCategories(),
@@ -790,16 +830,51 @@ Future<void> _loadData() async {
   }
   
   Widget _buildHeader() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final isLoggedIn = authProvider.isLoggedIn;
+    final isFirstLogin = authProvider.isFirstLogin;
+    
+    // 첫 로그인 상태에서 화면 진입 시 카테고리 선호도 화면으로 자동 이동
+    if (isLoggedIn && isFirstLogin) {
+      // 빌드 메서드에서 직접적인 네비게이션은 피해야 함
+      // 대신 microtask로 스케줄링
+      Future.microtask(() {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const CategoryPreferenceScreen(isFirstLogin: true),
+          ),
+        );
+      });
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '여행 도우미',
-          style: TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.w800,
-            color: Colors.black,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              '여행 도우미',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.w800,
+                color: Colors.black,
+              ),
+            ),
+            // 선호 카테고리 설정 버튼 추가
+            if (isLoggedIn)
+              IconButton(
+                icon: const Icon(Icons.category),
+                tooltip: '카테고리 선호도 설정',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const CategoryPreferenceScreen(isFirstLogin: false),
+                    ),
+                  );
+                },
+              ),
+          ],
         ),
         const SizedBox(height: 8),
         Text(
@@ -810,6 +885,85 @@ Future<void> _loadData() async {
           ),
         ),
       ],
+    );
+  }
+
+  // _buildPreferredCategories 메서드 추가 - 선호 카테고리 표시
+  Widget _buildPreferredCategories() {
+    if (_userPreferredCategories.isEmpty) {
+      return Container(); // 선호 카테고리가 없으면 표시하지 않음
+    }
+
+    // CategoryData 객체 목록으로 변환
+    final List<CategoryData> preferredCategoryObjects = [];
+    for (String categoryId in _userPreferredCategories) {
+      final category = CategoryConstants.getCategoryById(categoryId);
+      if (category != null) {
+        preferredCategoryObjects.add(category);
+      }
+    }
+
+    // 목록이 비어있으면 표시하지 않음
+    if (preferredCategoryObjects.isEmpty) {
+      return Container();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '내 관심 카테고리',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: preferredCategoryObjects
+              .take(5) // 최대 5개만 표시
+              .map((category) => _buildPreferredCategoryChip(category))
+              .toList(),
+        ),
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  // 선호 카테고리 칩 위젯
+  Widget _buildPreferredCategoryChip(CategoryData category) {
+    return InkWell(
+      onTap: () => _navigateToCategoryPlaces(category.name),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.black38),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              category.icon,
+              size: 18,
+              color: Colors.black87,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              category.name,
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

@@ -58,10 +58,13 @@ Future<void> _checkFirstLogin() async {
   // 현재 사용자 ID 가져오기
   final userId = prefs.getString('user_id');
   
+  if (userId == null || userId.isEmpty) {
+    print('사용자 ID를 찾을 수 없음. 첫 로그인 검사를 건너뜁니다.');
+    return;
+  }
+  
   // 사용자별 첫 로그인 상태 키 생성
-  final String userFirstLoginKey = userId != null && userId.isNotEmpty 
-      ? 'user_first_login_$userId' 
-      : 'is_first_login'; // 대체 키
+  final String userFirstLoginKey = 'user_first_login_$userId';
       
   // 사용자별 첫 로그인 상태 확인
   bool isFirstLogin = false;
@@ -75,7 +78,7 @@ Future<void> _checkFirstLogin() async {
     isFirstLogin = prefs.getBool('is_first_login') ?? false;
     
     // 사용자별 설정도 함께 저장 (동기화)
-    if (userId != null && userId.isNotEmpty) {
+    if (userId.isNotEmpty) {
       await prefs.setBool(userFirstLoginKey, isFirstLogin);
       print('사용자 $userId의 첫 로그인 상태 생성: $isFirstLogin');
     }
@@ -86,8 +89,12 @@ Future<void> _checkFirstLogin() async {
   // is_first_login에도 현재 상태 저장 (다른 화면과의 호환성 유지)
   await prefs.setBool('is_first_login', isFirstLogin);
   
-  if (isFirstLogin && mounted) {
-    print('첫 로그인 감지: 카테고리 선호도 화면으로 이동합니다.');
+  // 사용자 기반 선호도 확인
+  final bool hasPreferredCategories = await _hasUserPreferences(userId);
+  
+  // 첫 로그인이거나 선호 카테고리가 없는 경우 카테고리 선택 화면으로 이동
+  if ((isFirstLogin || !hasPreferredCategories) && mounted) {
+    print('첫 로그인 또는 카테고리 선호도 없음: 카테고리 선호도 화면으로 이동합니다.');
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => const CategoryPreferenceScreen(isFirstLogin: true),
@@ -95,6 +102,23 @@ Future<void> _checkFirstLogin() async {
     );
   } else {
     print('첫 로그인 아님: 일반 메인 화면을 표시합니다.');
+  }
+}
+
+// 사용자별 선호 카테고리 존재 여부 확인
+Future<bool> _hasUserPreferences(String userId) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final String userCategoryPrefsKey = 'user_category_preferences_$userId';
+    
+    // 사용자별 선호 카테고리 가져오기
+    final userCategories = prefs.getStringList(userCategoryPrefsKey);
+    
+    // 선호 카테고리가 있으면 true 반환
+    return userCategories != null && userCategories.isNotEmpty;
+  } catch (e) {
+    print('선호 카테고리 확인 오류: $e');
+    return false;
   }
 }
 
