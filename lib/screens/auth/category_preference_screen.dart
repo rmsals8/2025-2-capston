@@ -1,6 +1,7 @@
 // lib/screens/auth/category_preference_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:trip_helper/screens/main_navigation.dart';
 import '../../models/category_data.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_preference_provider.dart';
@@ -379,7 +380,9 @@ class _CategoryPreferenceScreenState extends State<CategoryPreferenceScreen> {
       // 첫 로그인인 경우 홈 화면으로 이동, 아니면 이전 화면으로 돌아가기
       if (widget.isFirstLogin) {
         if (mounted) {
-          Navigator.of(context).pushReplacementNamed('/home');
+           Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const MainNavigation()),
+          );
         }
       } else {
         if (mounted) {
