@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:trip_helper/providers/user_preference_provider.dart';
 import 'package:trip_helper/screens/home/home_screen.dart';
 import 'package:trip_helper/screens/route/route_generation_screen.dart';
 import 'package:trip_helper/screens/profile/profile_history_screen.dart';
@@ -10,6 +11,8 @@ import 'package:trip_helper/providers/navigation_provider.dart';
 import 'package:trip_helper/services/navigation_service.dart';
 import 'package:trip_helper/services/visit_history_service.dart';
 import 'package:trip_helper/services/place_recommendation_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'auth/category_preference_screen.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({Key? key}) : super(key: key);
@@ -21,10 +24,7 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _selectedIndex = 0;
   final PageController _pageController = PageController();
-
-  // 기본 위치 (앱 초기화 시 사용)
-  static const LatLng defaultLocation = LatLng(37.5665, 126.9780); // 서울시청
-
+  
   // 서비스 인스턴스
   final NavigationService _navigationService = NavigationService();
   final VisitHistoryService _visitHistoryService = VisitHistoryService();
@@ -38,7 +38,34 @@ class _MainNavigationState extends State<MainNavigation> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final locationProvider = Provider.of<LocationProvider>(context, listen: false);
       locationProvider.startTracking();
+      
+      // 첫 로그인 체크 및 카테고리 선호도 화면으로 이동
+      _checkFirstLogin();
     });
+  }
+  
+  Future<void> _checkFirstLogin() async {
+    // 약간의 지연을 주어 화면 전환이 자연스럽게 하기
+    await Future.delayed(const Duration(milliseconds: 100));
+    
+    if (!mounted) return;
+    
+    // SharedPreferences에서 직접 확인
+    final prefs = await SharedPreferences.getInstance();
+    final isFirstLogin = prefs.getBool('is_first_login') ?? false;
+    
+    print('MainNavigation: 첫 로그인 확인 - $isFirstLogin');
+    
+    if (isFirstLogin && mounted) {
+      print('첫 로그인 감지: 카테고리 선호도 화면으로 이동합니다.');
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => const CategoryPreferenceScreen(isFirstLogin: true),
+        ),
+      );
+    } else {
+      print('첫 로그인 아님: 일반 메인 화면을 표시합니다.');
+    }
   }
 
   @override
@@ -57,6 +84,10 @@ class _MainNavigationState extends State<MainNavigation> {
         Provider<NavigationService>.value(value: _navigationService),
         Provider<VisitHistoryService>.value(value: _visitHistoryService),
         Provider<PlaceRecommendationService>.value(value: _recommendationService),
+        // UserPreferenceProvider 추가
+      ChangeNotifierProvider<UserPreferenceProvider>(
+        create: (_) => UserPreferenceProvider(),
+      ),
       ],
       child: Scaffold(
         backgroundColor: Colors.white,

@@ -5,8 +5,10 @@ import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/recommended_place.dart';
 import '../models/visit_history.dart';
+import '../models/category_data.dart';
 import 'visit_history_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
+
 class PlaceRecommendationService {
   String? get foursquareApiKey => dotenv.dotenv.env['FOURSQUARE_API_KEY'];
   final VisitHistoryService _historyService = VisitHistoryService();
@@ -84,7 +86,6 @@ class PlaceRecommendationService {
   }
 
   // 위치 기반 주변 장소 추천
-// 변경 전: getNearbyPlaces 메서드 수정 (위치 기반 주변 장소 추천)
   Future<List<RecommendedPlace>> getNearbyPlaces(
       LatLng location, {
         double radius = 1000,
@@ -211,255 +212,601 @@ class PlaceRecommendationService {
     }
   }
 
-// lib/services/place_recommendation_service.dart에 이미지 기능 추가
-
-// _searchNearbyPlaces 메서드 수정 부분
-Future<List<RecommendedPlace>> _searchNearbyPlaces(
-    double lat,
-    double lng, {
-      double radius = 1000,
-      List<String>? categories,
-      int limit = 10,
-      bool strictDistance = false,
-    }) async {
-  if (foursquareApiKey == null) {
-    throw Exception('Foursquare API key not found');
-  }
-
-  // 좌표 유효성 검사 추가
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-    print('잘못된 좌표: $lat, $lng - 유효 범위를 벗어납니다');
-    return [];
-  }
-
-  String categoriesParam = '';
-  if (categories != null && categories.isNotEmpty) {
-    // Foursquare API에서 사용하는 카테고리 ID로 변환
-    final categoryIds = _mapCategoriesToFoursquareIds(categories);
-    if (categoryIds.isNotEmpty) {
-      categoriesParam = '&categories=${categoryIds.join(',')}';
-    }
-  }
-
-  // 반경을 정수로 변환 (API 요구사항)
-  final int radiusInt = radius.toInt();
-
-  // 필드 목록에 photos 추가
-  final url = Uri.parse(
-      'https://api.foursquare.com/v3/places/search'
-          '?ll=$lat,$lng'
-          '&radius=$radiusInt'
-          '&limit=$limit'
-          '$categoriesParam'
-          '&fields=fsq_id,name,categories,geocodes,location,distance,photos'  // photos 필드 추가
-  );
-
-  try {
-    print('장소 검색 API 요청: $url');
-    final response = await http.get(
-      url,
-      headers: {
-        'Authorization': foursquareApiKey!,
-        'Accept': 'application/json',
-      },
-    );
-
-    print('API 응답 상태 코드: ${response.statusCode}');
-    if (response.statusCode != 200) {
-      print('API 오류 응답: ${response.body}');
-      return [];
-    }
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-
-      if (data['results'] == null || (data['results'] as List).isEmpty) {
-        print('검색 결과 없음');
-        return [];
+  // 선호 카테고리 기반 추천 메서드 추가
+  Future<List<RecommendedPlace>> getRecommendationsBasedOnPreferences(
+      LatLng currentLocation, 
+      List<String> preferredCategories, {
+        int limit = 10,
+        double radius = 5000,
+      }) async {
+    try {
+      if (preferredCategories.isEmpty) {
+        print('선호 카테고리가 없습니다. 일반 추천으로 대체합니다.');
+        return getNearbyPlaces(currentLocation, limit: limit, radius: radius);
       }
-
-      print('검색된 장소 수: ${(data['results'] as List).length}');
-
-      // 모든 검색 결과 파싱
-      List<RecommendedPlace> allPlaces = [];
-      for (var place in data['results']) {
-        try {
-          // 카테고리 가져오기
-          final categories = place['categories'] as List? ?? [];
-          final mainCategory = categories.isNotEmpty ? categories[0]['name'] ?? '기타' : '기타';
-
-          // 좌표 가져오기 (geocodes가 기본, 없으면 location 사용)
-          double latitude = 0.0;
-          double longitude = 0.0;
-
-          if (place['geocodes'] != null && place['geocodes']['main'] != null) {
-            latitude = place['geocodes']['main']['latitude']?.toDouble() ?? 0.0;
-            longitude = place['geocodes']['main']['longitude']?.toDouble() ?? 0.0;
-          } else if (place['location'] != null) {
-            latitude = place['location']['latitude']?.toDouble() ?? 0.0;
-            longitude = place['location']['longitude']?.toDouble() ?? 0.0;
-          }
-
-          // 좌표가 없으면 건너뛰기
-          if (latitude == 0.0 || longitude == 0.0) {
-            print('경고: 장소 ${place['name']}의 좌표가 없습니다. 건너뜁니다.');
-            continue;
-          }
-
-          // 주소 처리
-          String address = '';
-          if (place['location'] != null) {
-            address = place['location']['formatted_address'] ??
-                place['location']['address'] ?? '';
-
-            // 도시, 국가 등 추가 정보 포함
-            String city = place['location']['locality'] ?? place['location']['city'] ?? '';
-            String country = place['location']['country'] ?? '';
-
-            if (city.isNotEmpty && !address.contains(city)) {
-              address += address.isNotEmpty ? ', $city' : city;
-            }
-            if (country.isNotEmpty && !address.contains(country)) {
-              address += address.isNotEmpty ? ', $country' : country;
-            }
-
-            if (address.isEmpty) {
-              address = '주소 정보 없음';
-            }
-          } else {
-            address = '주소 정보 없음';
-          }
-
-          // 거리 계산
-          double distance = 0.0;
-          if (place['distance'] != null) {
-            distance = (place['distance'] as num).toDouble();
-          } else {
-            // API에서 거리 정보가 없으면 직접 계산
-            distance = _calculateDistance(lat, lng, latitude, longitude);
-          }
-
-          // 이미지 URL 추출 (새로 추가된 부분)
-          String photoUrl = '';
-          if (place['photos'] != null && (place['photos'] as List).isNotEmpty) {
-            var photo = place['photos'][0];
-            if (photo['prefix'] != null && photo['suffix'] != null) {
-              // 이미지 크기 설정 (예: 300x300)
-              photoUrl = '${photo['prefix']}300x300${photo['suffix']}';
+      
+      print('선호 카테고리 기반 추천: $preferredCategories');
+      
+      // 선호 카테고리를 Foursquare 카테고리 ID로 변환
+      final List<String> foursquareIds = [];
+      
+      // CategoryData가 사용 가능한 경우 카테고리 ID를 카테고리 객체로 변환
+      if (CategoryConstants.categories.isNotEmpty) {
+        // 카테고리 ID를 카테고리 객체로 변환하여 foursquareId 추출
+        for (String categoryId in preferredCategories) {
+          final category = CategoryConstants.getCategoryById(categoryId);
+          if (category != null && category.foursquareId.isNotEmpty) {
+            if (!foursquareIds.contains(category.foursquareId)) {
+              foursquareIds.add(category.foursquareId);
             }
           }
-
-          print('장소: ${place['name']}, 거리: ${distance}m, 좌표: $latitude, $longitude, 이미지: $photoUrl');
-
-          final recommendedPlace = RecommendedPlace(
-            id: place['fsq_id'] ?? '',
-            name: place['name'] ?? '이름 없음',
-            latitude: latitude,
-            longitude: longitude,
-            address: address,
-            category: mainCategory,
-            rating: place['rating']?.toDouble() ?? 0.0,
-            photoUrl: photoUrl,  // 이미지 URL 설정
-            distance: distance,
-            reasonForRecommendation: '현재 위치에서 가까운 $mainCategory',
-          );
-
-          allPlaces.add(recommendedPlace);
-        } catch (e) {
-          print('장소 데이터 파싱 오류: $e');
-        }
-      }
-
-      // 거리 제한 검증 및 필터링
-      List<RecommendedPlace> filteredPlaces = [];
-
-      if (strictDistance) {
-        // 거리가 지정된 반경보다 1.5배까지만 허용 (약간의 여유 제공)
-        final maxAllowedDistance = radius * 1.5;
-
-        filteredPlaces = allPlaces.where((place) =>
-            place.distance <= maxAllowedDistance
-        ).toList();
-
-        print('거리 필터링 적용 후 남은 장소: ${filteredPlaces.length}/${allPlaces.length}');
-
-        // 필터링 후에도 결과가 없으면 최소한 가장 가까운 몇 개는 반환
-        if (filteredPlaces.isEmpty && allPlaces.isNotEmpty) {
-          // 거리순으로 정렬하고 최대 3개까지 반환
-          allPlaces.sort((a, b) => a.distance.compareTo(b.distance));
-          filteredPlaces = allPlaces.take(min(3, allPlaces.length)).toList();
-          print('거리 필터링 조건 완화: 가장 가까운 ${filteredPlaces.length}개 장소 반환');
         }
       } else {
-        filteredPlaces = allPlaces;
+        // CategoryData가 사용 불가능한 경우 기존 매핑 사용
+        for (String category in preferredCategories) {
+          final foursquareId = _getCategoryId(category);
+          if (foursquareId.isNotEmpty && !foursquareIds.contains(foursquareId)) {
+            foursquareIds.add(foursquareId);
+          }
+        }
       }
-
+      
+      if (foursquareIds.isEmpty) {
+        // 매핑 실패 시 카테고리 이름 그대로 사용
+        foursquareIds.addAll(preferredCategories);
+      }
+      
+      print('Foursquare 카테고리 ID: $foursquareIds');
+      
+      // 선호 카테고리별로 추천 장소 검색 (병렬 처리)
+      final List<Future<List<RecommendedPlace>>> futures = [];
+      
+      // 너무 많은 요청을 방지하기 위해 카테고리 그룹화
+      final int maxParallelRequests = 3;
+      final int categoryPerRequest = (foursquareIds.length / maxParallelRequests).ceil();
+      
+      // 최대 3개의 병렬 요청으로 제한
+      for (int i = 0; i < foursquareIds.length; i += categoryPerRequest) {
+        final end = (i + categoryPerRequest < foursquareIds.length) 
+            ? i + categoryPerRequest 
+            : foursquareIds.length;
+        
+        // 각 그룹에 대한 검색 요청
+        final subCategories = foursquareIds.sublist(i, end);
+        print('검색 그룹 ${i ~/ categoryPerRequest + 1}: $subCategories');
+        
+        futures.add(
+          _searchNearbyPlaces(
+            currentLocation.latitude,
+            currentLocation.longitude,
+            radius: radius,
+            categories: subCategories,
+            limit: (limit ~/ maxParallelRequests) + (limit % maxParallelRequests),
+            strictDistance: false,
+          ),
+        );
+      }
+      
+      // 모든 검색 결과 수집
+      final results = await Future.wait(futures);
+      List<RecommendedPlace> allRecommendations = [];
+      
+      // 결과 병합
+      for (var places in results) {
+        allRecommendations.addAll(places);
+      }
+      
+      // 이미 방문한 장소 제외
+      final visitedPlaces = await _getVisitedPlaceIds();
+      allRecommendations = allRecommendations
+          .where((place) => !visitedPlaces.contains(place.id))
+          .toList();
+      
+      // 카테고리 선호도에 따른 개인화된 이유 추가
+      allRecommendations = _addPersonalizedReasons(
+        allRecommendations, 
+        preferredCategories,
+      );
+      
       // 거리순으로 정렬
-      filteredPlaces.sort((a, b) => a.distance.compareTo(b.distance));
-
-      return filteredPlaces;
+      allRecommendations.sort((a, b) => a.distance.compareTo(b.distance));
+      
+      // 중복 제거 (같은 장소가 여러 카테고리에 해당될 수 있음)
+      final Map<String, RecommendedPlace> uniqueRecommendations = {};
+      for (var place in allRecommendations) {
+        if (!uniqueRecommendations.containsKey(place.id)) {
+          uniqueRecommendations[place.id] = place;
+        }
+      }
+      
+      print('총 ${uniqueRecommendations.length}개의 선호 카테고리 기반 추천 장소를 찾았습니다.');
+      
+      // 제한된 개수만 반환
+      return uniqueRecommendations.values.toList()
+        ..sort((a, b) => a.distance.compareTo(b.distance))
+        ..take(limit).toList();
+    } catch (e) {
+      print('선호 카테고리 기반 추천 오류: $e');
+      // 오류 발생 시 기본 추천으로 대체
+      return getNearbyPlaces(currentLocation, limit: limit, radius: radius);
     }
-
-    return [];
-  } catch (e) {
-    print('API 호출 또는 응답 처리 오류: $e');
-    return [];
-  }
-}
-
-// 개별 장소의 이미지를 가져오는 새로운 메서드 (필요한 경우 사용)
-Future<String?> getPlacePhoto(String placeId) async {
-  if (foursquareApiKey == null) {
-    throw Exception('Foursquare API key not found');
   }
 
-  final url = Uri.parse('https://api.foursquare.com/v3/places/$placeId/photos');
-  
-  try {
-    final response = await http.get(
-      url,
-      headers: {
-        'Authorization': foursquareApiKey!,
-        'Accept': 'application/json',
-      },
-    );
+  // 방문한 장소 ID 목록 가져오기
+  Future<Set<String>> _getVisitedPlaceIds() async {
+    try {
+      final visitHistories = await _historyService.getVisitHistories();
+      return visitHistories.map((history) => history.placeId).toSet();
+    } catch (e) {
+      print('방문 이력 조회 오류: $e');
+      return {};
+    }
+  }
+
+  // 개인화된 추천 이유 추가
+  List<RecommendedPlace> _addPersonalizedReasons(
+    List<RecommendedPlace> places, 
+    List<String> preferredCategories,
+  ) {
+    // CategoryData 객체 사용이 가능한 경우
+    final bool canUseCategory = CategoryConstants.categories.isNotEmpty;
     
-    if (response.statusCode == 200) {
-      final List<dynamic> data = json.decode(response.body);
-      if (data.isNotEmpty) {
-        var photo = data[0];
-        if (photo['prefix'] != null && photo['suffix'] != null) {
-          return '${photo['prefix']}300x300${photo['suffix']}';
+    // 선호 카테고리 객체 또는 이름 목록 생성
+    final List<String> preferredCategoryNames = [];
+    
+    if (canUseCategory) {
+      // CategoryData 클래스 사용 가능한 경우
+      for (String categoryId in preferredCategories) {
+        final category = CategoryConstants.getCategoryById(categoryId);
+        if (category != null) {
+          preferredCategoryNames.add(category.name);
         }
       }
     } else {
-      print('장소 이미지 API 오류: ${response.statusCode} - ${response.body}');
+      // 직접 카테고리 이름 사용
+      preferredCategoryNames.addAll(preferredCategories);
     }
     
-    return null;
-  } catch (e) {
-    print('장소 이미지 가져오기 오류: $e');
-    return null;
+    return places.map((place) {
+      // 일치하는 카테고리 찾기
+      String? matchingCategory;
+      for (var categoryName in preferredCategoryNames) {
+        if (place.category.toLowerCase().contains(categoryName.toLowerCase()) ||
+            categoryName.toLowerCase().contains(place.category.toLowerCase())) {
+          matchingCategory = categoryName;
+          break;
+        }
+      }
+      
+      // 추천 이유 설정
+      if (matchingCategory != null) {
+        return place.copyWith(
+          reasonForRecommendation: '선호하시는 "${matchingCategory}" 카테고리의 장소입니다',
+        );
+      } else {
+        return place.copyWith(
+          reasonForRecommendation: '선호하시는 카테고리를 기반으로 추천합니다',
+        );
+      }
+    }).toList();
   }
-}
+
+  // 홈 화면 로딩 시 카테고리 기반 추천 메서드
+  Future<List<RecommendedPlace>> getHomeScreenRecommendations(
+      LatLng currentLocation, {
+        int limit = 5,
+        double radius = 5000,
+        required List<String> preferredCategories,
+      }) async {
+    try {
+      // 기본 순서: 1) 방문 기록 기반, 2) 선호 카테고리 기반, 3) 위치 기반
+      List<RecommendedPlace> recommendations = [];
+      
+      // 방문 기록 기반 추천 시도 (최근 방문 기록이 있는 경우)
+      final recentPlaces = await _historyService.getRecentlyVisitedPlaces(limit: 3);
+      if (recentPlaces.isNotEmpty) {
+        recommendations = await getRecommendationsBasedOnHistory(
+          currentLocation,
+          limit: limit,
+          radius: radius,
+        );
+        
+        if (recommendations.isNotEmpty) {
+          print('방문 기록 기반 추천 사용');
+          return recommendations;
+        }
+      }
+      
+      // 방문 기록 기반 추천이 없는 경우, 선호 카테고리 기반 추천 시도
+      if (preferredCategories.isNotEmpty) {
+        recommendations = await getRecommendationsBasedOnPreferences(
+          currentLocation,
+          preferredCategories,
+          limit: limit,
+          radius: radius,
+        );
+        
+        if (recommendations.isNotEmpty) {
+          print('선호 카테고리 기반 추천 사용');
+          return recommendations;
+        }
+      }
+      
+      // 모두 실패한 경우, 위치 기반 추천
+      print('위치 기반 추천 사용');
+      return getNearbyPlaces(
+        currentLocation,
+        limit: limit,
+        radius: radius,
+      );
+    } catch (e) {
+      print('홈 화면 추천 오류: $e');
+      // 오류 발생 시 기본 위치 기반 추천
+      return getNearbyPlaces(
+        currentLocation,
+        limit: limit,
+        radius: radius,
+      );
+    }
+  }
+
+  // _searchNearbyPlaces 메서드
+  Future<List<RecommendedPlace>> _searchNearbyPlaces(
+      double lat,
+      double lng, {
+        double radius = 1000,
+        List<String>? categories,
+        int limit = 10,
+        bool strictDistance = false,
+      }) async {
+    if (foursquareApiKey == null) {
+      throw Exception('Foursquare API key not found');
+    }
+
+    // 좌표 유효성 검사 추가
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      print('잘못된 좌표: $lat, $lng - 유효 범위를 벗어납니다');
+      return [];
+    }
+
+    String categoriesParam = '';
+    if (categories != null && categories.isNotEmpty) {
+      // Foursquare API에서 사용하는 카테고리 ID로 변환
+      final categoryIds = _mapCategoriesToFoursquareIds(categories);
+      if (categoryIds.isNotEmpty) {
+        categoriesParam = '&categories=${categoryIds.join(',')}';
+      }
+    }
+
+    // 반경을 정수로 변환 (API 요구사항)
+    final int radiusInt = radius.toInt();
+
+    // 필드 목록에 photos 추가
+    final url = Uri.parse(
+        'https://api.foursquare.com/v3/places/search'
+            '?ll=$lat,$lng'
+            '&radius=$radiusInt'
+            '&limit=$limit'
+            '$categoriesParam'
+            '&fields=fsq_id,name,categories,geocodes,location,distance,photos'  // photos 필드 추가
+    );
+
+    try {
+      print('장소 검색 API 요청: $url');
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': foursquareApiKey!,
+          'Accept': 'application/json',
+        },
+      );
+
+      print('API 응답 상태 코드: ${response.statusCode}');
+      if (response.statusCode != 200) {
+        print('API 오류 응답: ${response.body}');
+        return [];
+      }
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['results'] == null || (data['results'] as List).isEmpty) {
+          print('검색 결과 없음');
+          return [];
+        }
+
+        print('검색된 장소 수: ${(data['results'] as List).length}');
+
+        // 모든 검색 결과 파싱
+        List<RecommendedPlace> allPlaces = [];
+        for (var place in data['results']) {
+          try {
+            // 카테고리 가져오기
+            final categories = place['categories'] as List? ?? [];
+            final mainCategory = categories.isNotEmpty ? categories[0]['name'] ?? '기타' : '기타';
+
+            // 좌표 가져오기 (geocodes가 기본, 없으면 location 사용)
+            double latitude = 0.0;
+            double longitude = 0.0;
+
+            if (place['geocodes'] != null && place['geocodes']['main'] != null) {
+              latitude = place['geocodes']['main']['latitude']?.toDouble() ?? 0.0;
+              longitude = place['geocodes']['main']['longitude']?.toDouble() ?? 0.0;
+            } else if (place['location'] != null) {
+              latitude = place['location']['latitude']?.toDouble() ?? 0.0;
+              longitude = place['location']['longitude']?.toDouble() ?? 0.0;
+            }
+
+            // 좌표가 없으면 건너뛰기
+            if (latitude == 0.0 || longitude == 0.0) {
+              print('경고: 장소 ${place['name']}의 좌표가 없습니다. 건너뜁니다.');
+              continue;
+            }
+
+            // 주소 처리
+            String address = '';
+            if (place['location'] != null) {
+              address = place['location']['formatted_address'] ??
+                  place['location']['address'] ?? '';
+
+              // 도시, 국가 등 추가 정보 포함
+              String city = place['location']['locality'] ?? place['location']['city'] ?? '';
+              String country = place['location']['country'] ?? '';
+
+              if (city.isNotEmpty && !address.contains(city)) {
+                address += address.isNotEmpty ? ', $city' : city;
+              }
+              if (country.isNotEmpty && !address.contains(country)) {
+                address += address.isNotEmpty ? ', $country' : country;
+              }
+
+              if (address.isEmpty) {
+                address = '주소 정보 없음';
+              }
+            } else {
+              address = '주소 정보 없음';
+            }
+
+            // 거리 계산
+            double distance = 0.0;
+            if (place['distance'] != null) {
+              distance = (place['distance'] as num).toDouble();
+            } else {
+              // API에서 거리 정보가 없으면 직접 계산
+              distance = _calculateDistance(lat, lng, latitude, longitude);
+            }
+
+            // 이미지 URL 추출 (새로 추가된 부분)
+            String photoUrl = '';
+            if (place['photos'] != null && (place['photos'] as List).isNotEmpty) {
+              var photo = place['photos'][0];
+              if (photo['prefix'] != null && photo['suffix'] != null) {
+                // 이미지 크기 설정 (예: 300x300)
+                photoUrl = '${photo['prefix']}300x300${photo['suffix']}';
+              }
+            }
+
+            print('장소: ${place['name']}, 거리: ${distance}m, 좌표: $latitude, $longitude, 이미지: $photoUrl');
+
+            final recommendedPlace = RecommendedPlace(
+              id: place['fsq_id'] ?? '',
+              name: place['name'] ?? '이름 없음',
+              latitude: latitude,
+              longitude: longitude,
+              address: address,
+              category: mainCategory,
+              rating: place['rating']?.toDouble() ?? 0.0,
+              photoUrl: photoUrl,  // 이미지 URL 설정
+              distance: distance,
+              reasonForRecommendation: '현재 위치에서 가까운 $mainCategory',
+            );
+
+            allPlaces.add(recommendedPlace);
+          } catch (e) {
+            print('장소 데이터 파싱 오류: $e');
+          }
+        }
+
+        // 거리 제한 검증 및 필터링
+        List<RecommendedPlace> filteredPlaces = [];
+
+        if (strictDistance) {
+          // 거리가 지정된 반경보다 1.5배까지만 허용 (약간의 여유 제공)
+          final maxAllowedDistance = radius * 1.5;
+
+          filteredPlaces = allPlaces.where((place) =>
+              place.distance <= maxAllowedDistance
+          ).toList();
+
+          print('거리 필터링 적용 후 남은 장소: ${filteredPlaces.length}/${allPlaces.length}');
+
+          // 필터링 후에도 결과가 없으면 최소한 가장 가까운 몇 개는 반환
+          if (filteredPlaces.isEmpty && allPlaces.isNotEmpty) {
+            // 거리순으로 정렬하고 최대 3개까지 반환
+            allPlaces.sort((a, b) => a.distance.compareTo(b.distance));
+            filteredPlaces = allPlaces.take(min(3, allPlaces.length)).toList();
+            print('거리 필터링 조건 완화: 가장 가까운 ${filteredPlaces.length}개 장소 반환');
+          }
+        } else {
+          filteredPlaces = allPlaces;
+        }
+
+        // 거리순으로 정렬
+        filteredPlaces.sort((a, b) => a.distance.compareTo(b.distance));
+
+        return filteredPlaces;
+      }
+
+      return [];
+    } catch (e) {
+      print('API 호출 또는 응답 처리 오류: $e');
+      return [];
+    }
+  }
+
+  // 개별 장소의 이미지를 가져오는 새로운 메서드 (필요한 경우 사용)
+  Future<String?> getPlacePhoto(String placeId) async {
+    if (foursquareApiKey == null) {
+      throw Exception('Foursquare API key not found');
+    }
+
+    final url = Uri.parse('https://api.foursquare.com/v3/places/$placeId/photos');
+    
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': foursquareApiKey!,
+          'Accept': 'application/json',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        if (data.isNotEmpty) {
+          var photo = data[0];
+          if (photo['prefix'] != null && photo['suffix'] != null) {
+            return '${photo['prefix']}300x300${photo['suffix']}';
+          }
+        }
+      } else {
+        print('장소 이미지 API 오류: ${response.statusCode} - ${response.body}');
+      }
+      
+      return null;
+    } catch (e) {
+      print('장소 이미지 가져오기 오류: $e');
+      return null;
+    }
+  }
+
   // 카테고리 이름을 Foursquare 카테고리 ID로 매핑
   List<String> _mapCategoriesToFoursquareIds(List<String> categories) {
-    // 실제 구현에서는 Foursquare 카테고리 ID로 매핑
-    // 여기서는 간단한 예시만 제공
-    Map<String, String> categoryToId = {
-      '식당': '13065',
-      '카페': '13032',
-      '쇼핑': '17000',
-      '관광': '16000',
-      '문화': '10000',
-      '엔터테인먼트': '10000',
-      '호텔': '19014',
-    };
+    // 확장된 카테고리 체계가 로드되었는지 확인
+    if (CategoryConstants.categories.isNotEmpty) {
+      // CategoryData 사용 가능할 경우, 이를 우선 사용
+      List<String> foursquareIds = [];
+      
+      for (String category in categories) {
+        // 카테고리 ID로 직접 조회 시도
+        final categoryData = CategoryConstants.getCategoryById(category);
+        if (categoryData != null && categoryData.foursquareId.isNotEmpty) {
+          foursquareIds.add(categoryData.foursquareId);
+          continue;
+        }
+        
+        // 실패하면 카테고리 이름으로 조회 시도
+        final categoryByName = CategoryConstants.getCategoryByName(category);
+        if (categoryByName != null && categoryByName.foursquareId.isNotEmpty) {
+          foursquareIds.add(categoryByName.foursquareId);
+          continue;
+        }
+        
+        // 둘 다 실패하면 기존 매핑 시도
+        final foursquareId = _getCategoryId(category);
+        if (foursquareId.isNotEmpty) {
+          foursquareIds.add(foursquareId);
+        }
+      }
+      
+      return foursquareIds.where((id) => id.isNotEmpty).toList();
+    } else {
+      // 기존 매핑 사용
+      return categories
+          .map((c) => _getCategoryId(c))
+          .where((id) => id.isNotEmpty)
+          .toList();
+    }
+  }
 
-    return categories
-        .map((c) => categoryToId[c] ?? '')
-        .where((id) => id.isNotEmpty)
-        .toList();
+  // 카테고리 문자열을 Foursquare ID로 변환하는 간단한 헬퍼 메서드
+  String _getCategoryId(String category) {
+    // 카테고리 이름 표준화 (소문자, 공백 제거)
+    final String normalizedCategory = category.toLowerCase().trim();
+    
+    // 기본 매핑 사전
+    final Map<String, String> categoryToId = {
+      '식당': '13065',
+      '음식점': '13065',
+      '레스토랑': '13065',
+      '한식': '13072',
+      '중식': '13073',
+      '일식': '13080',
+      '양식': '13076',
+      '패스트푸드': '13145',
+      
+      '카페': '13032',
+      '커피': '13032',
+      '디저트': '13040',
+      '베이커리': '13041',
+      '티룸': '13034',
+      
+      '쇼핑': '17000',
+      '쇼핑몰': '17015',
+      '패션': '17020',
+      '전자제품': '17061',
+      '시장': '17047',
+      '마트': '17069',
+      '백화점': '17069',
+      
+      '관광': '16000',
+      '명소': '16000',
+      '공원': '16010',
+      '등산': '16019',
+      '해변': '16049',
+      '산책로': '16032',
+      
+      '문화': '10000',
+      '박물관': '10027',
+      '미술관': '10022',
+      '역사': '10047',
+      
+      '엔터테인먼트': '10000',
+      '영화관': '10024',
+      '공연장': '10028',
+      '놀이공원': '10001',
+      '게임': '10022',
+      
+      '호텔': '19014',
+      '숙소': '19014',
+      '게스트하우스': '19011',
+      
+      '바': '14003',
+      '클럽': '14004',
+      '나이트라이프': '14000',
+      
+      '병원': '15014',
+      '약국': '15035',
+      '피트니스': '15013',
+      '헬스': '15013',
+      
+      '교육': '12000',
+      '도서관': '12009',
+      '서점': '17038',
+      '학교': '12012',
+      
+      '대중교통': '19000',
+      '지하철': '19026',
+      '버스': '19021',
+      '주차장': '19033',
+      '주유소': '19007',
+    };
+    
+    // 키워드 기반 매칭 (완전 일치)
+    if (categoryToId.containsKey(normalizedCategory)) {
+      return categoryToId[normalizedCategory]!;
+    }
+    
+    // 부분 매칭 (포함)
+    for (var entry in categoryToId.entries) {
+      if (normalizedCategory.contains(entry.key) || 
+          entry.key.contains(normalizedCategory)) {
+        return entry.value;
+      }
+    }
+    
+    // 매치를 찾지 못한 경우 빈 문자열 반환
+    return '';
   }
 
   // 두 좌표 사이의 거리 계산 (미터 단위)

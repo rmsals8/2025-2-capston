@@ -18,7 +18,8 @@ import 'providers/navigation_provider.dart';
 import 'services/navigation_service.dart';
 import 'services/visit_history_service.dart';  // 추가: 방문 기록 서비스
 import 'services/place_recommendation_service.dart';  // 추가: 장소 추천 서비스
-
+import 'providers/user_preference_provider.dart';
+import 'models/category_data.dart';
 Future<void> initializeApp() async {
   // Flutter 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,12 +68,20 @@ void main() async {
         providers: [
           Provider<NavigationService>.value(value: navigationService),
           Provider<VisitHistoryService>.value(value: visitHistoryService),  // 추가
+          ChangeNotifierProvider(create: (_) => UserPreferenceProvider()), 
           Provider<PlaceRecommendationService>.value(value: placeRecommendationService),  // 추가
           ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
           ChangeNotifierProvider<LocationProvider>.value(value: locationProvider),
           ChangeNotifierProvider<ScheduleProvider>.value(value: scheduleProvider),
           ChangeNotifierProvider<RouteProvider>.value(value: routeProvider),
           ChangeNotifierProvider<NavigationProvider>.value(value: navigationProvider),
+          ChangeNotifierProvider(
+          create: (_) => ScheduleProvider(
+            // ScheduleProvider 생성 시 AuthProvider 주입
+            authProvider: Provider.of<AuthProvider>(_, listen: false),
+          ),
+        ),
+        ChangeNotifierProvider(create: (_) => RouteProvider()),
         ],
         child: MyApp(isLoggedIn: token != null),
       ),
@@ -88,6 +97,7 @@ void main() async {
           Provider<VisitHistoryService>(create: (_) => VisitHistoryService()),  // 추가
           Provider<PlaceRecommendationService>(create: (_) => PlaceRecommendationService()),  // 추가
           ChangeNotifierProvider<AuthProvider>(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => UserPreferenceProvider()),
           ChangeNotifierProvider<LocationProvider>(create: (_) => LocationProvider()),
           ChangeNotifierProvider<ScheduleProvider>(create: (_) => ScheduleProvider(authProvider: authProvider)),
           ChangeNotifierProvider<RouteProvider>(create: (_) => RouteProvider()),

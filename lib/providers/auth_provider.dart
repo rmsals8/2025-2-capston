@@ -1,3 +1,4 @@
+// lib/providers/auth_provider.dart
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -5,26 +6,27 @@ class AuthProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _isLoggedIn = false;
+  bool _isFirstLogin = false;  // 첫 로그인 상태 추가
 
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isLoggedIn => _isLoggedIn;
+  bool get isFirstLogin => _isFirstLogin;  // 첫 로그인 getter 추가
 
   AuthProvider() {
     _checkLoginStatus();
   }
+  
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('access_token');
-
-    // 토큰이 없는 경우 임시적으로 하드코딩된 토큰 반환 (테스트용)
-
-
     return token;
   }
+  
   Future<void> _checkLoginStatus() async {
     final prefs = await SharedPreferences.getInstance();
     _isLoggedIn = prefs.getString('access_token') != null;
+    _isFirstLogin = prefs.getBool('is_first_login') ?? false;  // 첫 로그인 상태 로드
     notifyListeners();
   }
 
@@ -65,9 +67,56 @@ class AuthProvider with ChangeNotifier {
       }
 
       _isLoggedIn = true;
+      _isFirstLogin = true;  // 로그인 성공 시 첫 로그인으로 간주
+      
+      // 첫 로그인 상태 저장
+      await prefs.setBool('is_first_login', true);
+      
       notifyListeners();
     } catch (e) {
       _setError('로그인에 실패했습니다');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // 첫 로그인 상태 업데이트 메서드 추가
+  Future<void> updateFirstLoginStatus(bool isFirst) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('is_first_login', isFirst);
+      _isFirstLogin = isFirst;
+      notifyListeners();
+    } catch (e) {
+      print('첫 로그인 상태 업데이트 오류: $e');
+    }
+  }
+
+  Future<void> register({
+    required String email,
+    required String password,
+    required String name,
+  }) async {
+    try {
+      _setLoading(true);
+
+      // TODO: 실제 회원가입 API 호출 구현
+      // 임시 구현: 회원가입 후 자동 로그인
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('access_token', 'dummy_token');
+      await prefs.setString('user_id', email.split('@')[0]);
+      await prefs.setString('user_email', email);
+      await prefs.setString('user_name', name);
+      
+      // 신규 가입은 항상 첫 로그인으로 설정
+      await prefs.setBool('is_first_login', true);
+
+      _isLoggedIn = true;
+      _isFirstLogin = true;
+      
+      notifyListeners();
+    } catch (e) {
+      _setError('회원가입에 실패했습니다');
     } finally {
       _setLoading(false);
     }
@@ -86,6 +135,9 @@ class AuthProvider with ChangeNotifier {
       await prefs.remove('user_name');
       await prefs.remove('user_email');
       await prefs.remove('remember_me');
+      
+      // 첫 로그인 상태는 유지 (다음 로그인에 대비)
+      // await prefs.remove('is_first_login');
 
       _isLoggedIn = false;
       notifyListeners();
