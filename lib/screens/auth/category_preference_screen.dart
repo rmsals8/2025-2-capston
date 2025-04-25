@@ -33,38 +33,47 @@ class _CategoryPreferenceScreenState extends State<CategoryPreferenceScreen> {
   }
   
   // 저장된 선호도 불러오기
-Future<void> _loadSavedPreferences() async {
-  setState(() {
-    _isLoading = true;
-  });
-  
-  try {
-    // UserPreferenceProvider를 통해 현재 사용자의 선호 카테고리 불러오기
-    final prefsProvider = Provider.of<UserPreferenceProvider>(context, listen: false);
-    final savedCategories = await prefsProvider.getPreferredCategories();
-    
-    // 디버깅용 로그
-    print('카테고리 선호도 로드: ${savedCategories.length}개 카테고리 불러옴');
-    if (savedCategories.isNotEmpty) {
-      print('불러온 카테고리: ${savedCategories.join(", ")}');
+  Future<void> _loadSavedPreferences() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // 현재 사용자 ID 확인
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id') ?? '';
+
+      print('카테고리 선호도 화면: 현재 사용자 ID - $userId');
+
+      // UserPreferenceProvider를 통해 현재 사용자의 선호 카테고리 불러오기
+      final prefsProvider = Provider.of<UserPreferenceProvider>(context, listen: false);
+
+      // 메모리상 데이터 초기화 후 현재 사용자 데이터 로드
+      await prefsProvider.resetPreferences();
+      final savedCategories = await prefsProvider.loadPreferencesForUser(userId);
+
+      if (savedCategories.isNotEmpty) {
+        print('불러온 카테고리: ${savedCategories.join(", ")}');
+      } else {
+        print('저장된 선호 카테고리가 없습니다.');
+      }
+
+      setState(() {
+        // 이전 선택 항목 초기화 후 새로 불러온 항목으로 설정
+        _selectedCategories.clear();
+        _selectedCategories.addAll(savedCategories);
+      });
+    } catch (e) {
+      print('선호도 불러오기 오류: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('선호도를 불러오는 중 오류가 발생했습니다: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
-    
-    setState(() {
-      // 이전 선택 항목 초기화 후 새로 불러온 항목으로 설정
-      _selectedCategories.clear();
-      _selectedCategories.addAll(savedCategories);
-    });
-  } catch (e) {
-    print('선호도 불러오기 오류: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('선호도를 불러오는 중 오류가 발생했습니다: $e')),
-    );
-  } finally {
-    setState(() {
-      _isLoading = false;
-    });
   }
-}
 
   @override
   Widget build(BuildContext context) {

@@ -5,13 +5,13 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/route_model.dart';
 import '../models/navigation_status.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart' ;
-
+import 'package:flutter/material.dart';
 class NavigationService {
   // static const String baseUrl = 'http://10.0.2.2:8080/api/v1/navigation';
 
   static final String baseUrl = "${dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8080/api/v1'}/navigation";
   final http.Client _client;
-
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   NavigationService({http.Client? client}) : _client = client ?? http.Client();
 
   Future<List<RouteModel>> getRoutes(LatLng start, LatLng end) async {

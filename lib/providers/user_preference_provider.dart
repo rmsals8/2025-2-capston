@@ -24,7 +24,48 @@ class UserPreferenceProvider with ChangeNotifier {
   UserPreferenceProvider() {
     _loadPreferences();
   }
-  
+  // lib/providers/user_preference_provider.dart에 추가할 메서드
+
+// 메모리상의 선호도 데이터 초기화
+  Future<void> resetPreferences() async {
+    _preferredCategories = [];
+    notifyListeners();
+    return;
+  }
+
+// 특정 사용자의 선호도 명시적 로드
+  Future<List<String>> loadPreferencesForUser(String userId) async {
+    _setLoading(true);
+
+    try {
+      // 사용자별 키 생성
+      final userSpecificKey = '$_userCategoryPrefsKeyPrefix$userId';
+
+      print('특정 사용자($userId)의 카테고리 선호도 로드 중: $userSpecificKey');
+
+      // 로컬에서 사용자별 설정 가져오기
+      final prefs = await SharedPreferences.getInstance();
+      final userCategories = prefs.getStringList(userSpecificKey);
+
+      if (userCategories != null && userCategories.isNotEmpty) {
+        print('사용자($userId)의 카테고리 선호도 찾음: ${userCategories.join(", ")}');
+        _preferredCategories = List.from(userCategories);
+        notifyListeners();
+        return userCategories;
+      }
+
+      // 서버에서 가져오기 시도 또는 빈 배열 반환
+      _preferredCategories = [];
+      notifyListeners();
+      return [];
+    } catch (e) {
+      print('사용자($userId) 선호도 로드 오류: $e');
+      _setError('선호도 불러오기 실패: $e');
+      return [];
+    } finally {
+      _setLoading(false);
+    }
+  }
   // 현재 사용자 ID 가져오기 헬퍼 메서드
   Future<String?> _getCurrentUserId() async {
     final prefs = await SharedPreferences.getInstance();

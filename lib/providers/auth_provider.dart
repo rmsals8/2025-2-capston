@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:convert';
 
+import '../services/navigation_service.dart';
+
 class AuthProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
@@ -142,36 +144,40 @@ Future<void> updateFirstLoginStatus(bool isFirst) async {
     }
   }
 
-// 로그아웃 메서드 수정
-Future<void> logout() async {
-  try {
-    _setLoading(true);
+  Future<void> logout() async {
+    try {
+      _setLoading(true);
 
-    final prefs = await SharedPreferences.getInstance();
-    
-    // 현재 사용자 ID 저장 (나중에 사용)
-    final userId = prefs.getString('user_id');
+      final prefs = await SharedPreferences.getInstance();
 
-    // 모든 사용자 관련 정보 삭제
-    await prefs.remove('access_token');
-    await prefs.remove('refresh_token');
-    await prefs.remove('user_id');
-    await prefs.remove('user_name');
-    await prefs.remove('user_email');
-    await prefs.remove('remember_me');
-    
-    // 첫 로그인 상태는 제거 (다음 로그인 시 사용자별 상태 사용)
-    await prefs.remove('is_first_login');
+      // 현재 사용자 ID 저장 (나중에 사용)
+      final userId = prefs.getString('user_id');
 
-    _isLoggedIn = false;
-    _isFirstLogin = false;
-    notifyListeners();
-  } catch (e) {
-    _setError('로그아웃에 실패했습니다');
-  } finally {
-    _setLoading(false);
+      // 모든 사용자 관련 정보 삭제
+      await prefs.remove('access_token');
+      await prefs.remove('refresh_token');
+      await prefs.remove('user_id');
+      await prefs.remove('user_name');
+      await prefs.remove('user_email');
+      await prefs.remove('remember_me');
+
+      // 첫 로그인 상태는 제거 (다음 로그인 시 사용자별 상태 사용)
+      await prefs.remove('is_first_login');
+
+      // 키 값을 직접 문자열로 제공
+      await prefs.remove('user_category_preferences');
+
+      _isLoggedIn = false;
+      _isFirstLogin = false;
+      notifyListeners();
+
+      // 나머지 코드는 생략...
+    } catch (e) {
+      _setError('로그아웃에 실패했습니다');
+    } finally {
+      _setLoading(false);
+    }
   }
-}
 
   Future<void> refreshToken() async {
     try {
