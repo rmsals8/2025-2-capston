@@ -32,7 +32,7 @@ apply plugin: 'com.google.gms.google-services'
 
 android {
     namespace = "com.example.trip_helper"
-    compileSdkVersion = 34
+    compileSdkVersion = 35
     ndkVersion flutter.ndkVersion
 
     compileOptions {

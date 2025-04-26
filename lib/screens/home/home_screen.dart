@@ -207,7 +207,8 @@ class _HomeScreenState extends State<HomeScreen> {
         print('일정 데이터 처리 성공: $scheduleData'); // 한글 로그
 
         // scheduleProvider를 이용해 최적화 요청
-        final provider = Provider.of<ScheduleProvider>(context, listen: false);
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final provider = ScheduleProvider(authProvider: authProvider);
 
         try {
           print('Optimizing schedules...'); // 영어 로그

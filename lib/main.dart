@@ -57,7 +57,8 @@ void main() async {
     final navigationService = NavigationService();
     final authProvider = AuthProvider();
     final locationProvider = LocationProvider();
-    final scheduleProvider = ScheduleProvider(authProvider: authProvider);
+    // 수정: 아래 라인은 제거 (ChangeNotifierProxyProvider에서 처리할 것임)
+    // final scheduleProvider = ScheduleProvider(authProvider: authProvider);
     final routeProvider = RouteProvider();
     final navigationProvider = NavigationProvider();
     final visitHistoryService = VisitHistoryService();  // 추가: 방문 기록 서비스
@@ -68,20 +69,23 @@ void main() async {
         providers: [
           Provider<NavigationService>.value(value: navigationService),
           Provider<VisitHistoryService>.value(value: visitHistoryService),  // 추가
-          ChangeNotifierProvider(create: (_) => UserPreferenceProvider()), 
+          ChangeNotifierProvider(create: (_) => UserPreferenceProvider()),
           Provider<PlaceRecommendationService>.value(value: placeRecommendationService),  // 추가
           ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
           ChangeNotifierProvider<LocationProvider>.value(value: locationProvider),
-          ChangeNotifierProvider<ScheduleProvider>.value(value: scheduleProvider),
+          // 수정: 이 라인 제거 (아래 ChangeNotifierProxyProvider에서 대체)
+          // ChangeNotifierProvider<ScheduleProvider>.value(value: scheduleProvider),
           ChangeNotifierProvider<RouteProvider>.value(value: routeProvider),
           ChangeNotifierProvider<NavigationProvider>.value(value: navigationProvider),
-          ChangeNotifierProvider(
-          create: (_) => ScheduleProvider(
-            // ScheduleProvider 생성 시 AuthProvider 주입
-            authProvider: Provider.of<AuthProvider>(_, listen: false),
+          ChangeNotifierProxyProvider<AuthProvider, ScheduleProvider>(
+            create: (context) => ScheduleProvider(
+              authProvider: context.read<AuthProvider>(),
+            ),
+            update: (context, auth, previous) => ScheduleProvider(
+              authProvider: auth,
+            ),
           ),
-        ),
-        ChangeNotifierProvider(create: (_) => RouteProvider()),
+          ChangeNotifierProvider(create: (_) => RouteProvider()),
         ],
         child: MyApp(isLoggedIn: token != null),
       ),
@@ -89,14 +93,15 @@ void main() async {
   } catch (e) {
     print('Initialization error: $e');
     // 에러가 발생해도 기본 Provider들은 제공
-    var authProvider;
+    // 수정: var가 아닌 final로 선언하고 실제 인스턴스 할당
+    final authProvider = AuthProvider();
     runApp(
       MultiProvider(
         providers: [
           Provider<NavigationService>(create: (_) => NavigationService()),
           Provider<VisitHistoryService>(create: (_) => VisitHistoryService()),  // 추가
           Provider<PlaceRecommendationService>(create: (_) => PlaceRecommendationService()),  // 추가
-          ChangeNotifierProvider<AuthProvider>(create: (_) => AuthProvider()),
+          ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
           ChangeNotifierProvider(create: (_) => UserPreferenceProvider()),
           ChangeNotifierProvider<LocationProvider>(create: (_) => LocationProvider()),
           ChangeNotifierProvider<ScheduleProvider>(create: (_) => ScheduleProvider(authProvider: authProvider)),

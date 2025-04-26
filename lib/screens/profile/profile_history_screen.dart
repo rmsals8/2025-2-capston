@@ -5,11 +5,13 @@ import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 import '../../models/visit_history.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../services/visit_history_service.dart';
 import '../../services/schedule_save_service.dart';
+import '../../services/subscription_service.dart'; // 새로 추가할 서비스
 import '../auth/auth_screen.dart';
 import '../recommendations/history_based_recommendations_screen.dart';
 import '../schedule/saved_schedule_list_screen.dart';
@@ -29,6 +31,22 @@ class ProfileHistoryScreen extends StatefulWidget {
 class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
   final VisitHistoryService _historyService = VisitHistoryService();
   final ScheduleSaveService _scheduleSaveService = ScheduleSaveService();
+  final SubscriptionService _subscriptionService = SubscriptionService(); // 새로 추가할 서비스
+
+  // 구독 관련 상태
+  bool _isPremium = false;
+  String _subscriptionStatus = "FREE";
+  int _remainingUsage = 3; // 기본값 (FREE PLAN)
+  DateTime? _subscriptionEndDate;
+  bool _isLoadingSubscription = true;
+
+  // IAP 관련 상태
+  final InAppPurchase _inAppPurchase = InAppPurchase.instance;
+  List<ProductDetails> _products = [];
+  List<String> _productIds = ['premium_monthly', 'premium_yearly']; // 구글 플레이 콘솔에 등록할 상품 ID
+  bool _isAvailable = false;
+  bool _isLoadingProducts = true;
+  List<PurchaseDetails> _purchases = [];
 
   String get baseUrl {
     if (kIsWeb) {
@@ -48,6 +66,77 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
   void initState() {
     super.initState();
     _loadData();
+    _initInAppPurchase();
+  }
+
+  Future<void> _initInAppPurchase() async {
+    final bool isAvailable = await _inAppPurchase.isAvailable();
+    setState(() {
+      _isAvailable = isAvailable;
+    });
+
+    if (isAvailable) {
+      // 구독 상품 로드
+      final ProductDetailsResponse response =
+      await _inAppPurchase.queryProductDetails(_productIds.toSet());
+
+      setState(() {
+        _products = response.productDetails;
+        _isLoadingProducts = false;
+      });
+
+      // 구매 스트림 구독
+      _inAppPurchase.purchaseStream.listen(_listenToPurchaseUpdated);
+    }
+  }
+
+  void _listenToPurchaseUpdated(List<PurchaseDetails> purchaseDetailsList) async {
+    for (final PurchaseDetails purchaseDetails in purchaseDetailsList) {
+      if (purchaseDetails.status == PurchaseStatus.pending) {
+        // 구매 진행 중 - 로딩 표시 등
+      } else if (purchaseDetails.status == PurchaseStatus.purchased ||
+          purchaseDetails.status == PurchaseStatus.restored) {
+        // 구매 성공 - 백엔드에 구독 상태 업데이트
+        bool valid = await _verifyPurchase(purchaseDetails);
+        if (valid) {
+          await _subscriptionService.updateSubscription(
+            productId: purchaseDetails.productID,
+            purchaseToken: purchaseDetails.purchaseID!,
+          );
+          await _loadSubscriptionStatus(); // 구독 상태 새로고침
+        }
+      } else if (purchaseDetails.status == PurchaseStatus.error) {
+        // 오류 처리
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('구매 중 오류가 발생했습니다: ${purchaseDetails.error?.message}')),
+        );
+      }
+
+      // 완료된 구매 확인 처리
+      if (purchaseDetails.pendingCompletePurchase) {
+        await _inAppPurchase.completePurchase(purchaseDetails);
+      }
+    }
+  }
+
+  Future<bool> _verifyPurchase(PurchaseDetails purchaseDetails) async {
+    // 실제 환경에서는 서버에서 구매 검증을 수행해야 함
+    return true;
+  }
+
+  Future<void> _buySubscription(ProductDetails product) async {
+    final PurchaseParam purchaseParam = PurchaseParam(
+      productDetails: product,
+      applicationUserName: null,
+    );
+
+    try {
+      await _inAppPurchase.buyNonConsumable(purchaseParam: purchaseParam);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('구매 시도 중 오류가 발생했습니다: $e')),
+      );
+    }
   }
 
   Future<void> _loadData() async {
@@ -77,6 +166,9 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
         _categoryCounts[history.category] = (_categoryCounts[history.category] ?? 0) + 1;
       }
 
+      // 구독 상태 로드
+      await _loadSubscriptionStatus();
+
       // 저장된 일정 로드
       _loadSavedSchedules();
     } catch (e) {
@@ -87,6 +179,33 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  // 구독 상태 로드
+  Future<void> _loadSubscriptionStatus() async {
+    setState(() {
+      _isLoadingSubscription = true;
+    });
+
+    try {
+      final subscriptionData = await _subscriptionService.getSubscriptionStatus();
+      setState(() {
+        _subscriptionStatus = subscriptionData['planType'] ?? 'FREE';
+        _isPremium = _subscriptionStatus == 'PREMIUM';
+        _remainingUsage = subscriptionData['remaining'] ?? 3;
+
+        if (subscriptionData['endDate'] != null) {
+          _subscriptionEndDate = DateTime.parse(subscriptionData['endDate']);
+        }
+
+        _isLoadingSubscription = false;
+      });
+    } catch (e) {
+      print('구독 상태 로드 오류: $e');
+      setState(() {
+        _isLoadingSubscription = false;
+      });
     }
   }
 
@@ -149,12 +268,319 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildProfileCard(),
+              _buildSubscriptionCard(), // 구독 카드 추가
               _buildStatisticsCard(),
               _buildRecentVisitsSection(),
               _buildSavedSchedulesSection(),
               _buildCategoryStats(),
               _buildActionButtons(),
               const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 구독 정보 및 업그레이드 카드
+  Widget _buildSubscriptionCard() {
+    if (_isLoadingSubscription) {
+      return Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Center(
+          child: CircularProgressIndicator(color: Colors.grey[400]),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _isPremium ? Colors.black : Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _isPremium ? Colors.black : Colors.grey[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                _isPremium ? Icons.star : Icons.star_border,
+                color: _isPremium ? Colors.yellow : Colors.black,
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _isPremium ? '프리미엄 멤버십' : '무료 플랜',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: _isPremium ? Colors.white : Colors.black,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _isPremium
+                ? '일일 사용량: 무제한'
+                : '남은 일일 사용량: $_remainingUsage회',
+            style: TextStyle(
+              fontSize: 14,
+              color: _isPremium ? Colors.white70 : Colors.grey[700],
+            ),
+          ),
+          if (_isPremium && _subscriptionEndDate != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              '구독 만료일: ${DateFormat('yyyy년 MM월 dd일').format(_subscriptionEndDate!)}',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white70,
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isPremium ? null : () => _showSubscriptionDialog(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isPremium ? Colors.grey[800] : Colors.black,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey[600],
+                disabledForegroundColor: Colors.white70,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child: Text(
+                _isPremium ? '구독 중' : '프리미엄으로 업그레이드',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 구독 옵션 다이얼로그
+  void _showSubscriptionDialog() {
+    if (_isLoadingProducts || _products.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('구독 상품을 로드하는 중입니다. 잠시 후 다시 시도해주세요.')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.5,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (_, scrollController) {
+                return Column(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Text(
+                        '프리미엄으로 업그레이드',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Text(
+                        '프리미엄 멤버십으로 모든 기능을 제한 없이 사용해보세요.',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[700],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Expanded(
+                      child: ListView(
+                        controller: scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        children: [
+                          _buildFeatureItem(
+                            icon: Icons.check_circle_outline,
+                            text: '일일 사용량 무제한',
+                          ),
+                          _buildFeatureItem(
+                            icon: Icons.check_circle_outline,
+                            text: '고급 분석 및 추천',
+                          ),
+                          _buildFeatureItem(
+                            icon: Icons.check_circle_outline,
+                            text: '일정 자동 최적화',
+                          ),
+                          _buildFeatureItem(
+                            icon: Icons.check_circle_outline,
+                            text: '광고 없는 경험',
+                          ),
+                          const SizedBox(height: 32),
+                          ..._products.map((product) => _buildSubscriptionOption(product)),
+                          const SizedBox(height: 24),
+                          Text(
+                            '구독은 선택한 주기로 자동 갱신되며, 언제든지 취소할 수 있습니다.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFeatureItem({required IconData icon, required String text}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.green, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionOption(ProductDetails product) {
+    final bool isMonthly = product.id.contains('monthly');
+    final String period = isMonthly ? '월' : '년';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        onTap: () => _buySubscription(product),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    isMonthly ? '월간 구독' : '연간 구독',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (!isMonthly)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.green[100],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '20% 할인',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green[800],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                product.price,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                '/$period',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => _buySubscription(product),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: Text(
+                    '${isMonthly ? '월간' : '연간'} 구독하기',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

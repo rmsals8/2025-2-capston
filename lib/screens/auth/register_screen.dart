@@ -25,8 +25,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _confirmPasswordController = TextEditingController();
 
   // API URL
-  final baseUrl = 'http://localhost:8086/api/v1';
-  // final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8086/api/v1';
+  // final baseUrl = 'http://localhost:8086/api/v1';
+  final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8086/api/v1';
   // 로딩 상태
   bool _isLoading = false;
 
