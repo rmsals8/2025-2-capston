@@ -230,7 +230,8 @@ class RouteProvider with ChangeNotifier {
         };
 
         final response = await http.post(
-          Uri.parse('$baseUrl/schedules/optimize-1'),
+          // Uri.parse('$baseUrl/schedules/optimize-1'),
+          Uri.parse('https://port-0-capston-fastapi-m8dskoec57d8f7b3.sel4.cloudtype.app/api/v1/schedules/optimize-1'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode(requestBody),
         );

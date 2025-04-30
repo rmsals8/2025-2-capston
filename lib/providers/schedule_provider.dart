@@ -1,20 +1,20 @@
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import '../models/schedule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../providers/auth_provider.dart'; // AuthProvider import 추가
+import '../providers/auth_provider.dart';
 
 class ScheduleProvider with ChangeNotifier {
   List<Schedule> _schedules = [];
   bool _isLoading = false;
   String? _error;
   final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8081/api/v1';
-  final AuthProvider authProvider; // AuthProvider 인스턴스 추가
+  final AuthProvider authProvider;
 
-  // 생성자를 통해 AuthProvider 주입받기
   ScheduleProvider({required this.authProvider});
 
   List<Schedule> get schedules => _schedules;
@@ -25,7 +25,7 @@ class ScheduleProvider with ChangeNotifier {
 
   // AuthProvider로부터 토큰 가져오기
   Future<String?> getToken() async {
-    return authProvider.getToken(); // AuthProvider의 getToken 메서드 사용
+    return authProvider.getToken();
   }
 
   // 거리 계산 함수 추가
@@ -33,11 +33,55 @@ class ScheduleProvider with ChangeNotifier {
     return Geolocator.distanceBetween(lat1, lon1, lat2, lon2);
   }
 
-// lib/providers/schedule_provider.dart
+  // 인코딩 디버깅 유틸리티 함수 추가
+  void _printEncodingDebug(String label, String text) {
+    print('$label (first 100 chars): ${text.substring(0, math.min(100, text.length))}');
+    try {
+      // 인코딩 테스트
+      final utf8Encoded = utf8.encode(text);
+      final utf8Decoded = utf8.decode(utf8Encoded);
+      print('UTF-8 인코딩/디코딩 테스트: ${utf8Decoded == text ? "성공" : "실패"}');
+    } catch (e) {
+      print('인코딩 테스트 중 오류: $e');
+    }
+  }
+
+  // 한글 인코딩 문제 해결을 위한 JSON 변환 함수 추가
+  Map<String, dynamic> _ensureUtf8Encoding(Map<String, dynamic> data) {
+    // 문자열 값이 있으면 UTF-8로 인코딩 후 다시 디코딩하여 확실히 UTF-8로 변환
+    final jsonString = json.encode(data);
+    _printEncodingDebug('변환 전 JSON', jsonString);
+    
+    // UTF-8 바이트로 변환 후 다시 디코딩하여 인코딩 정규화
+    final utf8Bytes = utf8.encode(jsonString);
+    final normalizedString = utf8.decode(utf8Bytes);
+    
+    _printEncodingDebug('변환 후 JSON', normalizedString);
+    return json.decode(normalizedString);
+  }
+
+  // 인코딩 디버깅을 위한 로그 함수
+  void _logSchedulesEncoding(List<Map<String, dynamic>> schedules) {
+    if (schedules.isNotEmpty) {
+      // 첫 번째 일정만 로그로 출력
+      final firstSchedule = schedules.first;
+      if (firstSchedule.containsKey('name')) {
+        _printEncodingDebug('첫 번째 일정 이름', firstSchedule['name']);
+      }
+      if (firstSchedule.containsKey('location')) {
+        _printEncodingDebug('첫 번째 일정 위치', firstSchedule['location']);
+      }
+    }
+  }
+
   Future<Map<String, dynamic>> optimizeSchedules(List<Map<String, dynamic>> schedules) async {
     try {
       _isLoading = true;
       notifyListeners();
+
+      // 인코딩 디버깅
+      print('원본 일정 인코딩 확인:');
+      _logSchedulesEncoding(schedules);
 
       print('Submitting schedules: $schedules');
 
@@ -73,7 +117,19 @@ class ScheduleProvider with ChangeNotifier {
         'flexibleSchedules': flexibleSchedules
       };
 
-      print('Sending request to server: ${json.encode(requestBody)}');
+      // JSON 직렬화 전 인코딩 확인
+      print('요청 직렬화 전 인코딩 확인:');
+      if (fixedSchedules.isNotEmpty) {
+        _printEncodingDebug('고정 일정 첫 항목', json.encode(fixedSchedules.first));
+      }
+      if (flexibleSchedules.isNotEmpty) {
+        _printEncodingDebug('유연 일정 첫 항목', json.encode(flexibleSchedules.first));
+      }
+
+      // 요청 본문 인코딩 확인
+      final requestJson = json.encode(requestBody);
+      print('Sending request to server: ${requestJson}');
+      _printEncodingDebug('요청 본문', requestJson);
 
       // 인증 토큰 가져오기
       final token = await getToken();
@@ -84,18 +140,43 @@ class ScheduleProvider with ChangeNotifier {
       final response = await http.post(
           Uri.parse('$baseUrl/schedules/optimize-1'),
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/json; charset=utf-8', // 명시적으로 UTF-8 지정
             'Authorization': 'Bearer $token'
           },
-          body: json.encode(requestBody));
+          body: requestJson);
 
       if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
+        print('Response headers: ${response.headers}');
+        print('Response encoding: ${response.request?.headers['accept-charset']}');
+        
+        // 인코딩 테스트 출력
+        final String rawBody = response.body;
+        print('Raw response (first 100 chars): ${rawBody.substring(0, math.min(100, rawBody.length))}');
+        
+        // 명시적으로 UTF-8로 디코딩
+        final String utf8Body = utf8.decode(response.bodyBytes);
+        print('UTF8 decoded (first 100 chars): ${utf8Body.substring(0, math.min(100, utf8Body.length))}');
+        
+        // 디코딩된 텍스트를 JSON으로 파싱
+        final responseData = json.decode(utf8Body);
+        
+        // 응답 데이터 인코딩 확인
+        print('응답 데이터 인코딩 확인:');
+        if (responseData.containsKey('optimizedSchedules') && responseData['optimizedSchedules'].isNotEmpty) {
+          final firstSchedule = responseData['optimizedSchedules'][0];
+          if (firstSchedule.containsKey('name')) {
+            _printEncodingDebug('응답 첫 번째 일정 이름', firstSchedule['name']);
+          }
+          if (firstSchedule.containsKey('locationString')) {
+            _printEncodingDebug('응답 첫 번째 일정 위치', firstSchedule['locationString']);
+          }
+        }
+        
         _isLoading = false;
         notifyListeners();
         return responseData;
       } else {
-        throw Exception('서버 응답 오류: ${response.statusCode}\n${response.body}');
+        throw Exception('서버 응답 오류: ${response.statusCode}\n${utf8.decode(response.bodyBytes)}');
       }
     } catch (e, stackTrace) {
       print('Error during optimization: $e');
@@ -106,7 +187,8 @@ class ScheduleProvider with ChangeNotifier {
       throw Exception('일정 최적화 중 오류가 발생했습니다: $e');
     }
   }
-// 가장 적합한 장소 찾기
+
+  // 가장 적합한 장소 찾기
   Map<String, dynamic> findBestPlace(
       List<Map<String, dynamic>> places,
       Map<String, dynamic> prevSchedule,
@@ -119,7 +201,7 @@ class ScheduleProvider with ChangeNotifier {
     });
   }
 
-// 장소 점수 계산
+  // 장소 점수 계산
   double calculatePlaceScore(
       Map<String, dynamic> place,
       Map<String, dynamic> prevSchedule,
@@ -144,10 +226,15 @@ class ScheduleProvider with ChangeNotifier {
     // 거리가 짧을수록 높은 점수
     return 1000 / (distFromPrev + distToNext);
   }
+
   void createMultipleSchedules(List<Map<String, dynamic>> schedulesData) {
     try {
       _isLoading = true;
       notifyListeners();
+
+      // 인코딩 디버깅
+      print('일정 데이터 인코딩 확인:');
+      _logSchedulesEncoding(schedulesData);
 
       // 시작 시간 기준으로 정렬
       schedulesData.sort((a, b) {
@@ -174,6 +261,16 @@ class ScheduleProvider with ChangeNotifier {
 
       // 좌표값 형식 변환 및 일정 생성
       List<Schedule> newSchedules = schedulesData.map((data) {
+        // 한글 데이터 인코딩 확인
+        if (data.containsKey('name')) {
+          final name = data['name'] as String;
+          _printEncodingDebug('Schedule 변환 이름', name);
+        }
+        if (data.containsKey('location')) {
+          final location = data['location'] as String;
+          _printEncodingDebug('Schedule 변환 위치', location);
+        }
+
         // 좌표값 변환 (정수형인 경우에만)
         double latitude = data['latitude'] is int
             ? (data['latitude'] as int) / 10000000.0
@@ -196,6 +293,13 @@ class ScheduleProvider with ChangeNotifier {
         );
       }).toList();
 
+      // 생성된 일정 확인
+      if (newSchedules.isNotEmpty) {
+        final firstSchedule = newSchedules.first;
+        print('생성된 첫 번째 일정 이름: ${firstSchedule.name}');
+        print('생성된 첫 번째 일정 위치: ${firstSchedule.location}');
+      }
+
       // 기존 일정에 추가
       _schedules.addAll(newSchedules);
 
@@ -210,7 +314,6 @@ class ScheduleProvider with ChangeNotifier {
       throw Exception('Failed to create schedules: ${e.toString()}');
     }
   }
-
 
   void deleteSchedule(String id) {
     _schedules.removeWhere((schedule) => schedule.id == id);

@@ -1,5 +1,6 @@
 // lib/screens/home/home_screen.dart
 import 'dart:math';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -140,155 +141,181 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _isListening = false);
   }
 
-  // 음성으로 인식된 일정 처리 메소드 추가
-  Future<void> _processScheduleVoiceInput(String voiceText) async {
-    if (voiceText.isEmpty) return;
+// 음성으로 인식된 일정 처리 메소드 수정
+Future<void> _processScheduleVoiceInput(String voiceText) async {
+  if (voiceText.isEmpty) return;
 
-    print('Processing voice input: $voiceText'); // 영어 로그
-    print('음성 입력 처리 중: $voiceText'); // 한글 로그
+  print('Processing voice input: $voiceText'); // 영어 로그
+  print('음성 입력 처리 중: $voiceText'); // 한글 로그
 
-    // 일정 추가 여부 확인 다이얼로그
-    bool shouldProcess = await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('음성 인식 완료'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('다음 내용을 일정으로 추가할까요?'),
-            SizedBox(height: 8),
-            Text(
-              voiceText,
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text('일정 추가'),
+  // 일정 추가 여부 확인 다이얼로그
+  bool shouldProcess = await showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('음성 인식 완료'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('다음 내용을 일정으로 추가할까요?'),
+          SizedBox(height: 8),
+          Text(
+            voiceText,
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
         ],
       ),
-    ) ?? false;
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text('취소'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text('일정 추가'),
+        ),
+      ],
+    ),
+  ) ?? false;
 
-    print('User confirmed processing: $shouldProcess'); // 영어 로그
-    print('사용자 처리 확인: $shouldProcess'); // 한글 로그
+  print('User confirmed processing: $shouldProcess'); // 영어 로그
+  print('사용자 처리 확인: $shouldProcess'); // 한글 로그
 
-    if (!shouldProcess) return;
+  if (!shouldProcess) return;
 
-    // 로딩 표시
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
+  // 로딩 표시
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => Center(
+      child: CircularProgressIndicator(),
+    ),
+  );
 
-    try {
-      print('Processing schedule data using Lambda...'); // 영어 로그
-      print('Lambda를 사용하여 일정 데이터 처리 중...'); // 한글 로그
+  try {
+    print('Processing schedule data using Lambda...'); // 영어 로그
+    print('Lambda를 사용하여 일정 데이터 처리 중...'); // 한글 로그
 
-      // AWS Lambda API 호출로 처리
-      final scheduleData = await _processScheduleDataWithLambda(voiceText);
+    // AWS Lambda API 호출로 처리
+    final scheduleData = await _processScheduleDataWithLambda(voiceText);
     print('Calling AWS Lambda API...'); // 영어 로그
     print('AWS Lambda API 호출 중...'); // 한글 로그
-      // 로딩 다이얼로그 닫기
-      Navigator.of(context).pop();
 
-      if (scheduleData != null) {
-        print('Schedule data processed successfully: $scheduleData'); // 영어 로그
-        print('일정 데이터 처리 성공: $scheduleData'); // 한글 로그
+    // 로딩 다이얼로그 닫기
+    Navigator.of(context).pop();
 
-        // scheduleProvider를 이용해 최적화 요청
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        final provider = ScheduleProvider(authProvider: authProvider);
+    if (scheduleData != null) {
+      print('Schedule data processed successfully: $scheduleData'); // 영어 로그
+      print('일정 데이터 처리 성공: $scheduleData'); // 한글 로그
 
-        try {
-          print('Optimizing schedules...'); // 영어 로그
-          print('일정 최적화 중...'); // 한글 로그
+      // 한글 인코딩 확인 및 수정 (이 부분이 새로 추가됨)
+      final Map<String, dynamic> fixedData = _decodeKoreanData(scheduleData);
+      print('Fixed encoding data: $fixedData'); // 디버깅 로그
 
-          // scheduleData에서 fixedSchedules와 flexibleSchedules를 추출
-          List<Map<String, dynamic>> schedulesToOptimize = [];
+      // scheduleProvider를 이용해 최적화 요청
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final provider = ScheduleProvider(authProvider: authProvider);
 
-          // 고정 일정 추가
-          if (scheduleData.containsKey('fixedSchedules') &&
-              scheduleData['fixedSchedules'] is List) {
-            List<dynamic> fixedSchedules = scheduleData['fixedSchedules'];
-            schedulesToOptimize.addAll(
-                fixedSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
-            );
-            print('Added ${fixedSchedules.length} fixed schedules'); // 영어 로그
-            print('${fixedSchedules.length}개의 고정 일정 추가됨'); // 한글 로그
-          }
+      try {
+        print('Optimizing schedules...'); // 영어 로그
+        print('일정 최적화 중...'); // 한글 로그
 
-          // 유연한 일정 추가
-          if (scheduleData.containsKey('flexibleSchedules') &&
-              scheduleData['flexibleSchedules'] is List) {
-            List<dynamic> flexibleSchedules = scheduleData['flexibleSchedules'];
-            schedulesToOptimize.addAll(
-                flexibleSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
-            );
-            print('Added ${flexibleSchedules.length} flexible schedules'); // 영어 로그
-            print('${flexibleSchedules.length}개의 유연한 일정 추가됨'); // 한글 로그
-          }
+        // scheduleData에서 fixedSchedules와 flexibleSchedules를 추출
+        List<Map<String, dynamic>> schedulesToOptimize = [];
 
-          // 최적화 메소드 호출
-          final optimizedData = await provider.optimizeSchedules(schedulesToOptimize);
-          print('Schedule optimization successful'); // 영어 로그
-          print('일정 최적화 성공'); // 한글 로그
-
-          // 최적화된 일정 화면으로 이동
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => OptimizedScheduleScreen(
-                optimizedData: optimizedData,
-              ),
-            ),
+        // 고정 일정 추가
+        if (fixedData.containsKey('fixedSchedules') &&
+            fixedData['fixedSchedules'] is List) {
+          List<dynamic> fixedSchedules = fixedData['fixedSchedules'];
+          schedulesToOptimize.addAll(
+              fixedSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
           );
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('음성으로 일정이 추가되었습니다!')),
-          );
-        } catch (e) {
-          print('Error optimizing schedules: $e'); // 영어 로그
-          print('일정 최적화 오류: $e'); // 한글 로그
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('일정 최적화 중 오류가 발생했습니다: $e')),
-          );
+          print('Added ${fixedSchedules.length} fixed schedules'); // 영어 로그
+          print('${fixedSchedules.length}개의 고정 일정 추가됨'); // 한글 로그
         }
-      } else {
-        print('Failed to extract schedule data from voice input'); // 영어 로그
-        print('음성 입력에서 일정 데이터 추출 실패'); // 한글 로그
+
+        // 유연한 일정 추가
+        if (fixedData.containsKey('flexibleSchedules') &&
+            fixedData['flexibleSchedules'] is List) {
+          List<dynamic> flexibleSchedules = fixedData['flexibleSchedules'];
+          schedulesToOptimize.addAll(
+              flexibleSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
+          );
+          print('Added ${flexibleSchedules.length} flexible schedules'); // 영어 로그
+          print('${flexibleSchedules.length}개의 유연한 일정 추가됨'); // 한글 로그
+        }
+
+        // 최적화 메소드 호출
+        final optimizedData = await provider.optimizeSchedules(schedulesToOptimize);
+        print('Schedule optimization successful'); // 영어 로그
+        print('일정 최적화 성공'); // 한글 로그
+
+        // 최적화된 일정 화면으로 이동
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OptimizedScheduleScreen(
+              optimizedData: optimizedData,
+            ),
+          ),
+        );
 
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('음성에서 일정 정보를 추출할 수 없습니다')),
+          SnackBar(content: Text('음성으로 일정이 추가되었습니다!')),
+        );
+      } catch (e) {
+        print('Error optimizing schedules: $e'); // 영어 로그
+        print('일정 최적화 오류: $e'); // 한글 로그
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('일정 최적화 중 오류가 발생했습니다: $e')),
         );
       }
-    } catch (e) {
-      // 로딩 다이얼로그 닫기
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
-      }
-
-      print('Error processing voice input: $e'); // 영어 로그
-      print('음성 입력 처리 오류: $e'); // 한글 로그
+    } else {
+      print('Failed to extract schedule data from voice input'); // 영어 로그
+      print('음성 입력에서 일정 데이터 추출 실패'); // 한글 로그
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('오류가 발생했습니다: $e')),
+        SnackBar(content: Text('음성에서 일정 정보를 추출할 수 없습니다')),
       );
     }
-  }
+  } catch (e) {
+    // 로딩 다이얼로그 닫기
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
 
-  // AWS Lambda로 일정 데이터 처리 메소드
+    print('Error processing voice input: $e'); // 영어 로그
+    print('음성 입력 처리 오류: $e'); // 한글 로그
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('오류가 발생했습니다: $e')),
+    );
+  }
+}
+
+String _decodeKoreanText(String text) {
+  try {
+    // 깨진 한글 인코딩 패턴 탐지
+    if (text.contains('ì') || text.contains('ë') || text.contains('ê')) {
+      // ISO-8859-1로 인코딩된 것처럼 간주하고 바이트로 변환한 후 UTF-8로 디코딩
+      List<int> bytes = [];
+      for (int i = 0; i < text.length; i++) {
+        bytes.add(text.codeUnitAt(i));
+      }
+      
+      // UTF-8로 디코딩 시도
+      String decoded = utf8.decode(bytes);
+      print('Decoded text: $text -> $decoded');
+      return decoded;
+    }
+  } catch (e) {
+    print('한글 디코딩 오류: $e');
+  }
+  
+  return text; // 실패 시 원본 반환
+}
+// AWS Lambda로 일정 데이터 처리 메소드
 Future<Map<String, dynamic>?> _processScheduleDataWithLambda(String voiceInput) async {
   try {
     _isLoading = true; // 로딩 상태 설정 (필요시)
@@ -303,7 +330,7 @@ Future<Map<String, dynamic>?> _processScheduleDataWithLambda(String voiceInput) 
     
     print('Sending request to Lambda: ${json.encode(requestBody)}');
     
-    // HTTP POST 요청 (성공하는 다른 파일의 방식과 동일하게)
+    // HTTP POST 요청
     final response = await http.post(
       url,
       headers: {'Content-Type': 'application/json'},
@@ -313,10 +340,31 @@ Future<Map<String, dynamic>?> _processScheduleDataWithLambda(String voiceInput) 
     print('Lambda response status code: ${response.statusCode}');
     
     if (response.statusCode == 200) {
-      final responseData = json.decode(response.body);
+      // UTF-8로 명시적 디코딩 (중요)
+      final String utf8Body = utf8.decode(response.bodyBytes);
+      print('UTF-8 decoded response: ${utf8Body.substring(0, math.min(100, utf8Body.length))}...');
+      
+      // 디코딩된 JSON 파싱
+      final responseData = json.decode(utf8Body);
+      
+      // 한글 인코딩 확인 로그
+      if (responseData.containsKey('fixedSchedules') && responseData['fixedSchedules'].isNotEmpty) {
+        final firstFixed = responseData['fixedSchedules'][0];
+        if (firstFixed.containsKey('name')) {
+          print('Fixed schedule name: ${firstFixed['name']}');
+        }
+      }
+      
+      if (responseData.containsKey('flexibleSchedules') && responseData['flexibleSchedules'].isNotEmpty) {
+        final firstFlexible = responseData['flexibleSchedules'][0];
+        if (firstFlexible.containsKey('name')) {
+          print('Flexible schedule name: ${firstFlexible['name']}');
+        }
+      }
+      
       return responseData;
     } else {
-      print('Lambda API error: ${response.statusCode}\n${response.body}');
+      print('Lambda API error: ${response.statusCode}\n${utf8.decode(response.bodyBytes)}');
       return null;
     }
   } catch (e) {
@@ -326,7 +374,6 @@ Future<Map<String, dynamic>?> _processScheduleDataWithLambda(String voiceInput) 
     _isLoading = false; // 로딩 상태 해제 (필요시)
   }
 }
-
 // GPT API를 통해 일정 데이터 추출 메소드
   Future<Map<String, dynamic>?> _extractScheduleDataFromGPT(String voiceInput) async {
     print('Calling OpenAI API...'); // 영어 로그
@@ -652,6 +699,43 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
       'longitude': 126.9780
     };
   }
+  
+// 깨진 한글 인코딩을 복구하는 함수
+Map<String, dynamic> _decodeKoreanData(Map<String, dynamic> data) {
+  Map<String, dynamic> result = {};
+  
+  // 각 키에 대해 처리
+  data.forEach((key, value) {
+    if (value is String) {
+      // 문자열 값이면 디코딩 시도
+      result[key] = _decodeKoreanText(value);
+    } else if (value is Map) {
+      // 중첩된 맵이면 재귀적으로 처리
+      result[key] = _decodeKoreanData(Map<String, dynamic>.from(value));
+    } else if (value is List) {
+      // 리스트면 각 항목을 처리
+      result[key] = _decodeListItems(value);
+    } else {
+      // 그 외 타입은 그대로 사용
+      result[key] = value;
+    }
+  });
+  
+  return result;
+}
+// 리스트 항목 처리 함수
+List<dynamic> _decodeListItems(List<dynamic> items) {
+  return items.map((item) {
+    if (item is Map) {
+      return _decodeKoreanData(Map<String, dynamic>.from(item));
+    } else if (item is String) {
+      return _decodeKoreanText(item);
+    } else if (item is List) {
+      return _decodeListItems(item);
+    }
+    return item;
+  }).toList();
+}
 
   Future<void> _initializeServices() async {
     print('Initializing services...'); // 영어 로그
