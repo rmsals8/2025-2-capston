@@ -73,6 +73,9 @@ android {
         targetSdkVersion 34
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+
+        // 카카오 로그인을 위한 manifest placeholder 추가
+        manifestPlaceholders = [kakaoScheme: "kakao7245b857499b1f8786af07567b3aea91"]
     }
 
     buildTypes {

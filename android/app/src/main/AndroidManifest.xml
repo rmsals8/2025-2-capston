@@ -8,10 +8,11 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="com.android.vending.BILLING" />
+
     <application
         android:usesCleartextTraffic="true"
         android:label="trip_helper"
-        android:name="${applicationName}"
+        android:name="android.app.Application"
         android:icon="@mipmap/ic_launcher">
 
         <!-- Google Maps API Key -->
@@ -40,17 +41,15 @@
             </intent-filter>
         </activity>
 
-        <!-- 카카오 로그인 -->
+        <!-- 카카오 로그인 - 수정된 부분 -->
         <activity
-            android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity"
+            android:name="com.kakao.sdk.flutter.AuthCodeCustomTabsActivity"
             android:exported="true">
-            <intent-filter>
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:host="oauth"
-                    android:scheme="kakao7245b857499b1f8786af07567b3aea91" />
+                <data android:scheme="${kakaoScheme}" android:host="oauth" />
             </intent-filter>
         </activity>
 
