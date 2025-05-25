@@ -11,7 +11,7 @@
 
     <application
         android:usesCleartextTraffic="true"
-        android:label="trip_helper"
+        android:label="Schedule Maker"
         android:name="android.app.Application"
         android:icon="@mipmap/ic_launcher">
 
