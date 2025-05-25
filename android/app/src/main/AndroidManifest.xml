@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
+    <uses-permission android:name="com.android.vending.BILLING" />
     <application
         android:usesCleartextTraffic="true"
         android:label="trip_helper"
@@ -20,7 +20,7 @@
             android:value="AIzaSyA036NtD7ALG40jOnqSGks2QsI1nAG9cGI" />
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.trip_helper.app.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""

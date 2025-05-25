@@ -60,7 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Text(
-                      '여행 도우미',
+                      'Schedule Maker ',
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.w800,

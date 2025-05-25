@@ -28,7 +28,26 @@
       "client_info": {
         "mobilesdk_app_id": "1:769182070071:android:618adb2812fb60eb1e16b2",
         "android_client_info": {
-          "package_name": "com.example.trip_helper"
+          "package_name": "com.trip_helper.trip_helper"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDn0Z8XSbyTATK96NerXP3I7WIcoMeybCk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:769182070071:android:618adb2812fb60eb1e16b3",
+        "android_client_info": {
+          "package_name": "com.trip_helper.app"
         }
       },
       "oauth_client": [],

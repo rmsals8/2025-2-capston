@@ -1,4 +1,5 @@
-package com.example.trip_helper;
+package com.trip_helper.app;
+
 
 import io.flutter.embedding.android.FlutterActivity;
 

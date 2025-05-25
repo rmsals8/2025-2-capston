@@ -464,8 +464,6 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
     if (_isRouteInitialized && transportMode == null) return;
 
     try {
-      // const apiKey = 'AIzaSyA036NtD7ALG40jOnqSGks2QsI1nAG9cGI';
-
       // 이동 수단 설정
       if (transportMode != null) {
         _transportMode = transportMode;
@@ -517,6 +515,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
         // UTF-8 디코딩
         final data = json.decode(utf8.decode(response.bodyBytes));
         print('API 응답 상태: ${data['status']}');
+        print('API 오류 메시지: ${data['error_message'] ?? "없음"}');
 
         if (data['status'] == 'OK') {
           // 경로 디코딩
@@ -576,15 +575,78 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
 
           // 지도에 경로 표시
           _updateMapWithRoute();
+        } else if (data['status'] == 'ZERO_RESULTS') {
+          print('경로를 찾을 수 없습니다.');
+
+          // 이용 가능한 이동 모드 확인
+          if (data.containsKey('available_travel_modes') &&
+              data['available_travel_modes'] is List &&
+              (data['available_travel_modes'] as List).isNotEmpty) {
+
+            List<String> availableModes = List<String>.from(data['available_travel_modes']);
+            String availableModesText = availableModes.map((mode) {
+              switch (mode) {
+                case 'DRIVING': return '자동차';
+                case 'WALKING': return '도보';
+                case 'BICYCLING': return '자전거';
+                case 'TRANSIT': return '대중교통';
+                default: return mode;
+              }
+            }).join(', ');
+
+            setState(() {
+              _errorMessage = '현재 선택한 이동 수단(${_getTransportModeText()})으로는 경로를 찾을 수 없습니다. '
+                  '이용 가능한 이동 수단: $availableModesText';
+            });
+
+            // 사용 가능한 모드로 이동할지 물어보는 다이얼로그 표시
+            if (availableModes.isNotEmpty && !availableModes.contains(_transportMode.toUpperCase()) && mounted) {
+              String suggestedMode = _getModeFromApiMode(availableModes.first);
+
+              showDialog(
+                context: context,
+                builder: (BuildContext dialogContext) {
+                  return AlertDialog(
+                    title: Text('다른 이동 수단 이용'),
+                    content: Text('${_getTransportModeText()} 모드로는 경로를 찾을 수 없습니다. ${_getTransportModeText(suggestedMode)} 모드로 시도하시겠습니까?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(dialogContext).pop();
+                        },
+                        child: Text('취소'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(dialogContext).pop();
+                          if (mounted) {
+                            _fetchRoute(suggestedMode);  // 제안된 모드로 다시 시도
+                          }
+                        },
+                        child: Text('확인'),
+                      ),
+                    ],
+                  );
+                },
+              );
+            }
+          } else {
+            setState(() {
+              _errorMessage = '해당 이동 수단으로 경로를 찾을 수 없습니다. 직선 경로를 표시합니다.';
+            });
+          }
+
+          // 직선 경로 생성
+          _createDirectRoute();
         } else {
-          print('API 오류: ${data['error_message'] ?? '상세 정보 없음'}');
+          print('API 오류: ${data['error_message'] ?? data['status']}. 직선 경로를 표시합니다.');
 
           // 직선 경로 생성
           _createDirectRoute();
 
           setState(() {
-            if (data['status'] == 'ZERO_RESULTS') {
-              _errorMessage = '해당 이동 수단으로 경로를 찾을 수 없습니다. 직선 경로를 표시합니다.';
+            if (data['status'] == 'REQUEST_DENIED') {
+              _errorMessage = '경로 탐색 권한이 거부되었습니다. API 키를 확인해주세요. 직선 경로를 표시합니다.';
             } else {
               _errorMessage = '경로 탐색 실패: ${data['status']}. 직선 경로를 표시합니다.';
             }
@@ -607,6 +669,34 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       setState(() {
         _errorMessage = '경로 가져오기 오류: $e. 직선 경로를 표시합니다.';
       });
+    }
+  }
+
+// API 모드 문자열을 앱 내부 모드 문자열로 변환
+  String _getModeFromApiMode(String apiMode) {
+    switch (apiMode.toUpperCase()) {
+      case 'DRIVING': return 'DRIVING';
+      case 'WALKING': return 'WALK';
+      case 'BICYCLING': return 'BICYCLING';
+      case 'TRANSIT': return 'TRANSIT';
+      default: return 'DRIVING';
+    }
+  }
+
+// 선택된 이동 수단의 텍스트 반환
+  String _getTransportModeText([String? mode]) {
+    String transportMode = mode ?? _transportMode;
+    switch (transportMode) {
+      case 'WALK':
+        return '도보';
+      case 'TRANSIT':
+        return '대중교통';
+      case 'DRIVING':
+        return '자동차';
+      case 'BICYCLING':
+        return '자전거';
+      default:
+        return '이동';
     }
   }
 
@@ -807,19 +897,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
     }
   }
 
-  // 이동 수단 텍스트 변환
-  String _getTransportModeText() {
-    switch (_transportMode) {
-      case 'WALK':
-        return '도보';
-      case 'TRANSIT':
-        return '대중교통';
-      case 'DRIVING':
-        return '자동차';
-      default:
-        return '이동';
-    }
-  }
+
 
   // 경로 안내 UI 위젯 - Modern 디자인 적용
   Widget _buildRouteInstructions() {

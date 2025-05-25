@@ -1,0 +1,2 @@
+C:/2025-2-capston-0426/android/app/.cxx/RelWithDebInfo/51146354/armeabi-v7a/CMakeFiles/edit_cache.dir
+C:/2025-2-capston-0426/android/app/.cxx/RelWithDebInfo/51146354/armeabi-v7a/CMakeFiles/rebuild_cache.dir

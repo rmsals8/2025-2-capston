@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'dart:async'; // 추가
+import 'package:flutter/foundation.dart' show kDebugMode; // 추가
 import 'package:in_app_purchase/in_app_purchase.dart';
 import '../../models/visit_history.dart';
 import '../../providers/auth_provider.dart';
@@ -29,6 +31,8 @@ class ProfileHistoryScreen extends StatefulWidget {
 }
 
 class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
+  late StreamSubscription<List<PurchaseDetails>> _subscription;
+  bool _isPurchasePending = false;
   final VisitHistoryService _historyService = VisitHistoryService();
   final ScheduleSaveService _scheduleSaveService = ScheduleSaveService();
   final SubscriptionService _subscriptionService = SubscriptionService(); // 새로 추가할 서비스
@@ -43,7 +47,7 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
   // IAP 관련 상태
   final InAppPurchase _inAppPurchase = InAppPurchase.instance;
   List<ProductDetails> _products = [];
-  List<String> _productIds = ['premium_monthly', 'premium_yearly']; // 구글 플레이 콘솔에 등록할 상품 ID
+  List<String> _productIds = ['premium_monthly']; // 구글 플레이 콘솔에 등록할 상품 ID
   bool _isAvailable = false;
   bool _isLoadingProducts = true;
   List<PurchaseDetails> _purchases = [];
@@ -66,73 +70,265 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
   void initState() {
     super.initState();
     _loadData();
+    _loadSubscriptionStatus();
     _initInAppPurchase();
   }
-
+  @override
+  void dispose() {
+    if (_subscription != null) {
+      _subscription.cancel();
+    }
+    _inAppPurchase.purchaseStream.drain().then((_) => _subscription.cancel());
+    super.dispose();
+  }
   Future<void> _initInAppPurchase() async {
+    print('_initInAppPurchase 시작');
     final bool isAvailable = await _inAppPurchase.isAvailable();
+    print('isAvailable: $isAvailable');
+
     setState(() {
       _isAvailable = isAvailable;
     });
 
     if (isAvailable) {
-      // 구독 상품 로드
-      final ProductDetailsResponse response =
-      await _inAppPurchase.queryProductDetails(_productIds.toSet());
-
-      setState(() {
-        _products = response.productDetails;
-        _isLoadingProducts = false;
-      });
-
       // 구매 스트림 구독
-      _inAppPurchase.purchaseStream.listen(_listenToPurchaseUpdated);
-    }
-  }
+      _subscription = _inAppPurchase.purchaseStream.listen(
+        _listenToPurchaseUpdated,
+        onDone: () {
+          _subscription.cancel();
+        },
+        onError: (error) {
+          print('구매 스트림 오류: $error');
+        },
+      );
 
+      // 상품 정보 로드
+      try {
+        print('상품 정보 로드 시작: ${_productIds.toSet()}');
+        final ProductDetailsResponse response =
+        await _inAppPurchase.queryProductDetails(_productIds.toSet());
+
+        // 디버깅용 메시지 출력
+        print('response.productDetails: ${response.productDetails.length}');
+        print('response.error: ${response.error?.message}');
+        print('response.notFoundIDs: ${response.notFoundIDs}');
+
+        if (response.error != null) {
+          print('상품 목록 조회 오류: ${response.error!.message}');
+        }
+
+        // 개발 환경에서 테스트용 상품 데이터 추가
+        if (kDebugMode && response.productDetails.isEmpty) {
+          setState(() {
+            _products = [
+              ProductDetails(
+                id: 'premium_monthly',
+                title: '월간 구독 (테스트)',
+                description: '테스트용 월간 구독',
+                price: '₩5,000',
+                rawPrice: 5000,
+                currencyCode: 'KRW',
+              )
+            ];
+            _isLoadingProducts = false;
+          });
+          print('테스트용 상품 데이터 추가됨');
+        } else {
+          setState(() {
+            _products = response.productDetails;
+            _isLoadingProducts = false;
+          });
+        }
+      } catch (e) {
+        print('상품 목록 로딩 중 오류 발생: $e');
+
+        // 오류 발생 시 테스트용 상품 데이터 추가
+        if (kDebugMode) {
+          setState(() {
+            _products = [
+              ProductDetails(
+                id: 'premium_monthly',
+                title: '월간 구독 (테스트)',
+                description: '테스트용 월간 구독',
+                price: '₩5,000',
+                rawPrice: 5000,
+                currencyCode: 'KRW',
+              )
+            ];
+            _isLoadingProducts = false;
+          });
+          print('오류 발생 후 테스트용 상품 데이터 추가됨');
+        } else {
+          setState(() {
+            _isLoadingProducts = false;
+          });
+        }
+      }
+    } else {
+      // 인앱 결제를 사용할 수 없는 경우 테스트용 상품 데이터 추가
+      if (kDebugMode) {
+        setState(() {
+          _products = [
+            ProductDetails(
+              id: 'premium_monthly',
+              title: '월간 구독 (테스트)',
+              description: '테스트용 월간 구독',
+              price: '₩5,000',
+              rawPrice: 5000,
+              currencyCode: 'KRW',
+            )
+          ];
+          _isLoadingProducts = false;
+        });
+        print('인앱 결제 사용 불가: 테스트용 상품 데이터 추가됨');
+      } else {
+        setState(() {
+          _isLoadingProducts = false;
+        });
+      }
+      print('인앱 결제를 사용할 수 없습니다.');
+    }
+    print('_initInAppPurchase 종료');
+  }
   void _listenToPurchaseUpdated(List<PurchaseDetails> purchaseDetailsList) async {
     for (final PurchaseDetails purchaseDetails in purchaseDetailsList) {
       if (purchaseDetails.status == PurchaseStatus.pending) {
-        // 구매 진행 중 - 로딩 표시 등
-      } else if (purchaseDetails.status == PurchaseStatus.purchased ||
-          purchaseDetails.status == PurchaseStatus.restored) {
-        // 구매 성공 - 백엔드에 구독 상태 업데이트
-        bool valid = await _verifyPurchase(purchaseDetails);
-        if (valid) {
-          await _subscriptionService.updateSubscription(
-            productId: purchaseDetails.productID,
-            purchaseToken: purchaseDetails.purchaseID!,
-          );
-          await _loadSubscriptionStatus(); // 구독 상태 새로고침
-        }
-      } else if (purchaseDetails.status == PurchaseStatus.error) {
-        // 오류 처리
+        // 로딩 UI 표시
+        setState(() {
+          _isPurchasePending = true;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('구매 중 오류가 발생했습니다: ${purchaseDetails.error?.message}')),
+          const SnackBar(content: Text('결제가 진행 중입니다...')),
         );
-      }
+      } else {
+        setState(() {
+          _isPurchasePending = false;
+        });
 
-      // 완료된 구매 확인 처리
-      if (purchaseDetails.pendingCompletePurchase) {
-        await _inAppPurchase.completePurchase(purchaseDetails);
+        if (purchaseDetails.status == PurchaseStatus.error) {
+          _handlePurchaseError(purchaseDetails.error!);
+        } else if (purchaseDetails.status == PurchaseStatus.purchased ||
+            purchaseDetails.status == PurchaseStatus.restored) {
+          await _deliverProduct(purchaseDetails);
+        } else if (purchaseDetails.status == PurchaseStatus.canceled) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('구매가 취소되었습니다.')),
+          );
+        }
+
+        // 메모리 누수 방지를 위해 구매 상태에 상관없이 완료 처리
+        if (purchaseDetails.pendingCompletePurchase) {
+          await _inAppPurchase.completePurchase(purchaseDetails);
+        }
       }
     }
   }
 
+  // _ProfileHistoryScreenState 클래스 내에 추가하세요
+  void _handlePurchaseError(IAPError error) {
+    print('구매 오류: ${error.message}, 코드: ${error.code}');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('구매 중 오류가 발생했습니다: ${error.message}')),
+    );
+  }
+  // _ProfileHistoryScreenState 클래스 내에 추가하세요
+  Future<void> _deliverProduct(PurchaseDetails purchaseDetails) async {
+    try {
+      // 구매 검증
+      final bool valid = await _verifyPurchase(purchaseDetails);
+
+      if (!valid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('구매 검증에 실패했습니다.')),
+        );
+        return;
+      }
+
+      // 백엔드에 구독 상태 업데이트
+      await _subscriptionService.updateSubscription(
+        productId: purchaseDetails.productID,
+        purchaseToken: purchaseDetails.purchaseID!,
+      );
+
+      // UI 업데이트
+      await _loadSubscriptionStatus();
+
+      // 성공 메시지 표시
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('프리미엄 구독이 성공적으로 활성화되었습니다!')),
+        );
+      }
+    } catch (e) {
+      print('구독 처리 중 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('구독 처리 중 오류가 발생했습니다: $e')),
+        );
+      }
+    }
+  }
+
+// _ProfileHistoryScreenState 클래스 내에 추가하세요
   Future<bool> _verifyPurchase(PurchaseDetails purchaseDetails) async {
-    // 실제 환경에서는 서버에서 구매 검증을 수행해야 함
-    return true;
+    // 테스트 환경에서는 항상 true 반환
+    if (kDebugMode) {
+      return true;
+    }
+
+    // 실제 환경에서는 서버 검증 필요
+    try {
+      return await _subscriptionService.verifyPurchase(
+        productId: purchaseDetails.productID,
+        purchaseToken: purchaseDetails.purchaseID!,
+      );
+    } catch (e) {
+      print('구매 검증 오류: $e');
+      return false;
+    }
   }
 
   Future<void> _buySubscription(ProductDetails product) async {
+    if (_isPurchasePending) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이미 결제가 진행 중입니다. 잠시만 기다려주세요.')),
+      );
+      return;
+    }
+
+    // 테스트 모드에서는 구매 성공 처리
+    if (kDebugMode) {
+      print('테스트 모드: 구매 성공 처리');
+      setState(() {
+        _isPremium = true;
+        _subscriptionStatus = "PREMIUM";
+        _remainingUsage = 999;
+        _subscriptionEndDate = DateTime.now().add(Duration(days: 30));
+      });
+
+      // 로컬에 저장
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('subscription_status', 'PREMIUM');
+      await prefs.setInt('remaining_usage', 999);
+      await prefs.setString('subscription_end_date', DateTime.now().add(Duration(days: 30)).toIso8601String());
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('테스트 모드: 프리미엄 구독이 활성화되었습니다!')),
+      );
+      return;
+    }
+
     final PurchaseParam purchaseParam = PurchaseParam(
       productDetails: product,
       applicationUserName: null,
     );
 
     try {
+      print('구매 시작: ${product.id}, ${product.price}');
       await _inAppPurchase.buyNonConsumable(purchaseParam: purchaseParam);
+      print('구매 요청 완료');
     } catch (e) {
+      print('구매 시도 중 오류: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('구매 시도 중 오류가 발생했습니다: $e')),
       );
@@ -377,15 +573,15 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
     );
   }
 
-  // 구독 옵션 다이얼로그
   void _showSubscriptionDialog() {
-    if (_isLoadingProducts || _products.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('구독 상품을 로드하는 중입니다. 잠시 후 다시 시도해주세요.')),
-      );
-      return;
-    }
+    print('_isLoadingProducts: $_isLoadingProducts');
+    print('_products: ${_products.map((p) => '${p.id}: ${p.price}').join(', ')}');
+    print('_products.isEmpty: ${_products.isEmpty}');
 
+    // 테스트 모드 강제 적용 - 상품 정보 로드 여부 관계없이 테스트 UI 표시
+    final bool isTestMode = true; // 테스트 할 때는 true로 설정
+
+    // 구독 모달 표시
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -457,7 +653,187 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
                             text: '광고 없는 경험',
                           ),
                           const SizedBox(height: 32),
-                          ..._products.map((product) => _buildSubscriptionOption(product)),
+
+                          // 테스트용 월간 구독 옵션
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey[300]!),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.pop(context);
+                                _activateTestSubscription(monthly: true);
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          '월간 구독 (테스트)',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue[100],
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            '테스트',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.blue[800],
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      '₩5,000',
+                                      style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    Text(
+                                      '/월',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          Navigator.pop(context);
+                                          _activateTestSubscription(monthly: true);
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.black,
+                                          foregroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                        ),
+                                        child: const Text(
+                                          '월간 구독하기',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // 테스트용 연간 구독 옵션
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey[300]!),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.pop(context);
+                                _activateTestSubscription(monthly: false);
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          '연간 구독 (테스트)',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green[100],
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            '20% 할인',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.green[800],
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      '₩48,000',
+                                      style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    Text(
+                                      '/년',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          Navigator.pop(context);
+                                          _activateTestSubscription(monthly: false);
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.black,
+                                          foregroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                        ),
+                                        child: const Text(
+                                          '연간 구독하기',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
                           const SizedBox(height: 24),
                           Text(
                             '구독은 선택한 주기로 자동 갱신되며, 언제든지 취소할 수 있습니다.',
@@ -479,6 +855,38 @@ class _ProfileHistoryScreenState extends State<ProfileHistoryScreen> {
         );
       },
     );
+  }
+  // _ProfileHistoryScreenState 클래스 내에 추가
+  void _activateTestSubscription({required bool monthly}) {
+    setState(() {
+      _isPremium = true;
+      _subscriptionStatus = "PREMIUM";
+      _remainingUsage = 999;
+      _subscriptionEndDate = monthly
+          ? DateTime.now().add(Duration(days: 30))
+          : DateTime.now().add(Duration(days: 365));
+
+      // 로컬에 구독 상태 저장
+      _saveSubscriptionStatusLocally();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('테스트 모드: ${monthly ? '월간' : '연간'} 프리미엄 구독이 활성화되었습니다!')),
+    );
+  }
+
+  Future<void> _saveSubscriptionStatusLocally() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('subscription_status', _subscriptionStatus);
+      await prefs.setInt('remaining_usage', _remainingUsage);
+
+      if (_subscriptionEndDate != null) {
+        await prefs.setString('subscription_end_date', _subscriptionEndDate!.toIso8601String());
+      }
+    } catch (e) {
+      print('구독 상태 저장 오류: $e');
+    }
   }
 
   Widget _buildFeatureItem({required IconData icon, required String text}) {

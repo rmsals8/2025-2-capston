@@ -289,43 +289,45 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // AWS Lambda로 일정 데이터 처리 메소드
-Future<Map<String, dynamic>?> _processScheduleDataWithLambda(String voiceInput) async {
-  try {
-    _isLoading = true; // 로딩 상태 설정 (필요시)
-    
-    // Lambda 엔드포인트 URL
-    final url = Uri.parse(_lambdaApiUrl);
-    
-    // 요청 본문 데이터
-    final requestBody = {
-      "voice_input": voiceInput
-    };
-    
-    print('Sending request to Lambda: ${json.encode(requestBody)}');
-    
-    // HTTP POST 요청 (성공하는 다른 파일의 방식과 동일하게)
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(requestBody)
-    );
+  Future<Map<String, dynamic>?> _processScheduleDataWithLambda(String voiceInput) async {
+    try {
+      _isLoading = true;
 
-    print('Lambda response status code: ${response.statusCode}');
-    
-    if (response.statusCode == 200) {
-      final responseData = json.decode(response.body);
-      return responseData;
-    } else {
-      print('Lambda API error: ${response.statusCode}\n${response.body}');
+      final url = Uri.parse(_lambdaApiUrl);
+      final requestBody = {
+        "voice_input": voiceInput
+      };
+
+      print('Sending request to Lambda: ${json.encode(requestBody)}');
+
+      // ✅ 한글 인코딩 처리 추가
+      final response = await http.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',  // ✅ charset 추가
+            'Accept': 'application/json; charset=utf-8',        // ✅ Accept 헤더 추가
+          },
+          body: utf8.encode(json.encode(requestBody))  // ✅ UTF-8 인코딩
+      );
+
+      print('Lambda response status code: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        // ✅ bodyBytes 사용하여 UTF-8 디코딩
+        final jsonString = utf8.decode(response.bodyBytes);
+        final responseData = json.decode(jsonString);
+        return responseData;
+      } else {
+        print('Lambda API error: ${response.statusCode}\n${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('Lambda API call exception: $e');
       return null;
+    } finally {
+      _isLoading = false;
     }
-  } catch (e) {
-    print('Lambda API call exception: $e');
-    return null;
-  } finally {
-    _isLoading = false; // 로딩 상태 해제 (필요시)
   }
-}
 
 // GPT API를 통해 일정 데이터 추출 메소드
   Future<Map<String, dynamic>?> _extractScheduleDataFromGPT(String voiceInput) async {
@@ -855,7 +857,7 @@ Future<void> _loadData() async {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text(
-              '여행 도우미',
+              'Schedule Maker',
               style: TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.w800,

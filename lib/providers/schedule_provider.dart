@@ -11,7 +11,8 @@ class ScheduleProvider with ChangeNotifier {
   List<Schedule> _schedules = [];
   bool _isLoading = false;
   String? _error;
-  final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8081/api/v1';
+  // final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8081/api/v1';
+  final baseUrl = 'https://port-0-capston-m8dskoec57d8f7b3.sel4.cloudtype.app/api/v1';
   final AuthProvider authProvider; // AuthProvider 인스턴스 추가
 
   // 생성자를 통해 AuthProvider 주입받기
@@ -84,13 +85,15 @@ class ScheduleProvider with ChangeNotifier {
       final response = await http.post(
           Uri.parse('$baseUrl/schedules/optimize-1'),
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/json; charset=utf-8',  // ✅ charset 추가
+            'Accept': 'application/json; charset=utf-8',        // ✅ Accept 헤더 추가
             'Authorization': 'Bearer $token'
           },
-          body: json.encode(requestBody));
+          body: utf8.encode(json.encode(requestBody)));
 
       if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
+        final jsonString = utf8.decode(response.bodyBytes);
+        final responseData = json.decode(jsonString);
         _isLoading = false;
         notifyListeners();
         return responseData;
