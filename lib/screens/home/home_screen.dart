@@ -831,16 +831,13 @@ Future<void> _loadData() async {
 
     return text; // 모든 방법 실패시 원래 텍스트 반환
   }
-  
+
   Widget _buildHeader() {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final isLoggedIn = authProvider.isLoggedIn;
     final isFirstLogin = authProvider.isFirstLogin;
-    
-    // 첫 로그인 상태에서 화면 진입 시 카테고리 선호도 화면으로 자동 이동
+
     if (isLoggedIn && isFirstLogin) {
-      // 빌드 메서드에서 직접적인 네비게이션은 피해야 함
-      // 대신 microtask로 스케줄링
       Future.microtask(() {
         Navigator.of(context).push(
           MaterialPageRoute(
@@ -856,19 +853,37 @@ Future<void> _loadData() async {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Schedule Maker',
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.w800,
-                color: Colors.black,
-              ),
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(
+                    Icons.calendar_today,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Schedule Maker',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black,
+                  ),
+                ),
+              ],
             ),
-            // 선호 카테고리 설정 버튼 추가
             if (isLoggedIn)
               IconButton(
                 icon: const Icon(Icons.category),
                 tooltip: '카테고리 선호도 설정',
+                color: Colors.black54,
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -880,11 +895,14 @@ Future<void> _loadData() async {
           ],
         ),
         const SizedBox(height: 8),
-        Text(
-          '오늘도 좋은 하루 보내세요!',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.grey[600],
+        Padding(
+          padding: const EdgeInsets.only(left: 44), // 아이콘 크기 + 간격만큼 들여쓰기
+          child: Text(
+            '오늘도 좋은 하루 보내세요!',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[600],
+            ),
           ),
         ),
       ],

@@ -13,7 +13,7 @@ import '../../widgets/auth/modern_social_login_button.dart';
 import '../../widgets/auth/naver_image_button.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 class LoginScreen extends StatefulWidget {
   final VoidCallback? onRegisterTap;
   final VoidCallback? onPasswordResetTap;
@@ -43,6 +43,146 @@ class _LoginScreenState extends State<LoginScreen> {
     _passwordController.dispose();
     super.dispose();
   }
+  Future<void> _handleKakaoLogin() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // 키 해시 직접 확인 (카카오 SDK 사용)
+      try {
+        final keyHash = await KakaoSdk.origin;
+        print("=== 🔑 현재 사용 중인 키 해시 ===");
+        print("KeyHash: $keyHash");
+        print("패키지명: com.trip_helper.app");
+        print("이 값을 카카오 개발자 콘솔에 등록하세요!");
+        print("============================");
+
+        // 사용자에게도 표시
+
+      } catch (keyHashError) {
+        print("키 해시 확인 실패: $keyHashError");
+      }
+
+      // 카카오 로그인 시도
+      bool isInstalled = await isKakaoTalkInstalled();
+      OAuthToken token;
+
+      if (isInstalled) {
+        token = await UserApi.instance.loginWithKakaoTalk();
+      } else {
+        token = await UserApi.instance.loginWithKakaoAccount();
+      }
+
+      print('카카오 액세스 토큰: ${token.accessToken}');
+      await _sendKakaoTokenToBackend(token.accessToken);
+
+    } catch (error) {
+      print('카카오 로그인 실패: $error');
+
+      // 키 해시 오류인 경우 특별 처리git add .
+      // git commit -m "토큰 보여주는 부분 삭제"
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('카카오 로그인 실패: $error')),
+          );
+        }
+
+    }
+  }
+
+// 백엔드에 카카오 토큰 전송
+  Future<void> _sendKakaoTokenToBackend(String kakaoToken) async {
+    try {
+      final apiUrl = kIsWeb
+          ? 'http://localhost:8081/api/v1/auth/social/kakao'
+          : '$baseUrl/auth/social/kakao';
+
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'accessToken': kakaoToken,
+        }),
+      );
+
+      print('카카오 백엔드 응답: ${response.statusCode}, ${response.body}');
+
+      if (response.statusCode == 200) {
+        final authResponse = json.decode(response.body);
+
+        // JWT 토큰 저장
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('access_token', authResponse['accessToken']);
+        await prefs.setString('refresh_token', authResponse['refreshToken']);
+
+        // 사용자 정보 저장
+        String userId = "";
+        if (authResponse['userProfile'] != null) {
+          final userProfile = authResponse['userProfile'];
+
+          if (userProfile['id'] != null) {
+            userId = userProfile['id'].toString();
+            await prefs.setString('user_id', userId);
+          }
+          if (userProfile['name'] != null) {
+            await prefs.setString('user_name', userProfile['name']);
+          }
+          if (userProfile['email'] != null) {
+            await prefs.setString('user_email', userProfile['email']);
+          }
+
+          // 소셜 로그인 타입 설정
+          await prefs.setInt('login_type', 1); // 1: 소셜 로그인
+        }
+
+        // 첫 로그인 상태 확인 및 설정
+        final String firstLoginKey = 'user_first_login_$userId';
+        final bool hasFirstLoginRecord = prefs.containsKey(firstLoginKey);
+
+        if (hasFirstLoginRecord) {
+          final isFirstLogin = prefs.getBool(firstLoginKey) ?? false;
+          await prefs.setBool('is_first_login', isFirstLogin);
+        } else {
+          await prefs.setBool(firstLoginKey, true);
+          await prefs.setBool('is_first_login', true);
+        }
+
+        // 사용자 선호도 초기화 및 로드
+        if (mounted) {
+          try {
+            final prefProvider = Provider.of<UserPreferenceProvider>(
+                context,
+                listen: false
+            );
+            await prefProvider.resetPreferences();
+            if (userId.isNotEmpty) {
+              await prefProvider.loadPreferencesForUser(userId);
+            }
+          } catch (e) {
+            print('선호도 초기화/로드 중 오류: $e');
+          }
+        }
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const MainNavigation()),
+          );
+        }
+      } else {
+        throw Exception('백엔드 인증 실패: ${response.body}');
+      }
+    } catch (e) {
+      print('백엔드 토큰 전송 실패: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('로그인 처리 실패: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,12 +199,34 @@ class _LoginScreenState extends State<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
-                      'Schedule Maker ',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black,
+                    RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'Schedule ',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w300,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          const TextSpan(
+                            text: 'Maker',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.black,
+                            ),
+                          ),
+                          const TextSpan(
+                            text: '.',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF4F46E5),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -73,6 +235,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.grey[600],
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                     const SizedBox(height: 48),
@@ -205,8 +368,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: TextButton(
-                        onPressed: () {},
-                        child: Row(
+                        onPressed: _isLoading ? null : _handleKakaoLogin, // 로딩 중일 때 비활성화
+                        child: _isLoading
+                            ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.black54, // 카카오 노란색 배경에 맞는 색상
+                            strokeWidth: 2,
+                          ),
+                        )
+                            : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(

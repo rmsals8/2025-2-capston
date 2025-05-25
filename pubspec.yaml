@@ -38,8 +38,7 @@ dependencies:
   flutter_svg: ^2.0.9
   webview_flutter: ^4.0.0  # 추가
   google_speech: ^2.2.0
-
-
+  kakao_flutter_sdk_user: ^1.9.6
   # 상태 관리
   provider: ^6.1.1
   get: ^4.6.6

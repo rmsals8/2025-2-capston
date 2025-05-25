@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
 import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart'; // 추가
 import 'screens/auth/auth_screen.dart';
 import 'screens/main_navigation.dart';
 import 'providers/schedule_provider.dart';
@@ -19,11 +20,16 @@ import 'services/navigation_service.dart';
 import 'services/visit_history_service.dart';  // 추가: 방문 기록 서비스
 import 'services/place_recommendation_service.dart';  // 추가: 장소 추천 서비스
 import 'providers/user_preference_provider.dart';
-import 'models/category_data.dart';
+
 Future<void> initializeApp() async {
   // Flutter 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
+
+  // 카카오 SDK 초기화 (추가된 부분)
+  KakaoSdk.init(
+    nativeAppKey: dotenv.env['KAKAO_NATIVE_APP_KEY'] ?? 'YOUR_NATIVE_APP_KEY',
+  );
 
   // Google Maps 렌더러 초기화
   final GoogleMapsFlutterPlatform mapsImplementation = GoogleMapsFlutterPlatform.instance;

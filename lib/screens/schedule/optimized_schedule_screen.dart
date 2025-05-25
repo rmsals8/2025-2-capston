@@ -27,7 +27,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
   Map<String, int> selectedAlternatives = {};
   final ScheduleSaveService _scheduleSaveService = ScheduleSaveService();
   bool _isSaving = false;
-
+  bool _isCreatingRoute = false;
   @override
   Widget build(BuildContext context) {
     // Map에서 필요한 데이터 추출 및 타입 변환
@@ -739,16 +739,26 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          // 경로 생성 버튼
+
+          // ✅ 경로 생성 버튼 - 로딩 스피너 추가
           Expanded(
             flex: 2,
             child: SizedBox(
               height: 56,
               child: ElevatedButton.icon(
-                icon: const Icon(Icons.map),
-                label: const Text(
-                  '경로 생성',
-                  style: TextStyle(
+                icon: _isCreatingRoute
+                    ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white, // 검정 배경이므로 흰색 스피너
+                  ),
+                )
+                    : const Icon(Icons.map),
+                label: Text(
+                  _isCreatingRoute ? '경로 생성 중...' : '경로 생성',
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
@@ -761,7 +771,8 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
                   ),
                   elevation: 0,
                 ),
-                onPressed: () => _createRoute(context, schedules),
+                // ✅ 로딩 중일 때 버튼 비활성화
+                onPressed: _isCreatingRoute ? null : () => _createRoute(context, schedules),
               ),
             ),
           ),
@@ -889,6 +900,11 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
   }
 
   Future<void> _createRoute(BuildContext context, List<Map<String, dynamic>> schedules) async {
+    // 로딩 시작
+    setState(() {
+      _isCreatingRoute = true;
+    });
+
     try {
       final routeProvider = context.read<RouteProvider>();
 
@@ -954,8 +970,16 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
           SnackBar(content: Text('경로 생성 중 오류가 발생했습니다: $e')),
         );
       }
+    } finally {
+      // ✅ 로딩 종료 (성공/실패 상관없이)
+      if (mounted) {
+        setState(() {
+          _isCreatingRoute = false;
+        });
+      }
     }
   }
+
 
   String _formatDateTime(dynamic dateTime) {
     if (dateTime == null) return '';

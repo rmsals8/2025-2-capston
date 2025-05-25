@@ -53,12 +53,35 @@ class _SavedScheduleDetailScreenState extends State<SavedScheduleDetailScreen> w
 
     try {
       final detail = await _scheduleSaveService.getSavedScheduleDetail(widget.scheduleId);
+
+      // ✅ 받아온 데이터 전체 확인
+      print('=== 받아온 일정 상세 데이터 ===');
+      print('전체 데이터: $detail');
+
+      if (detail['scheduleItems'] != null) {
+        print('=== 일정 항목들의 데이터 구조 ===');
+        for (var item in detail['scheduleItems']) {
+          print('항목: ${item['name']}');
+          print('전체 데이터: $item');
+          print('latitude 필드 존재: ${item.containsKey('latitude')}');
+          print('longitude 필드 존재: ${item.containsKey('longitude')}');
+          if (item.containsKey('latitude')) {
+            print('latitude 값: ${item['latitude']} (타입: ${item['latitude'].runtimeType})');
+          }
+          if (item.containsKey('longitude')) {
+            print('longitude 값: ${item['longitude']} (타입: ${item['longitude'].runtimeType})');
+          }
+          print('---');
+        }
+      }
+
       setState(() {
         _scheduleDetail = detail;
         _isLoading = false;
       });
       _setupMapData();
     } catch (e) {
+      print('❌ 데이터 로딩 오류: $e');
       setState(() {
         _isLoading = false;
         _hasError = true;
@@ -172,76 +195,55 @@ class _SavedScheduleDetailScreenState extends State<SavedScheduleDetailScreen> w
     // 마커 생성
     List<dynamic> items = _scheduleDetail['scheduleItems'];
     _markers.clear();
-    
+
     for (int i = 0; i < items.length; i++) {
       final item = items[i];
-      // 위치 정보가 있는 경우에만 마커 추가
-      if (item['location'] != null) {
-        double? latitude;
-        double? longitude;
-        
-        // 먼저 직접적인 좌표 정보 확인
-        if (item.containsKey('latitude') && item.containsKey('longitude')) {
-          latitude = double.tryParse(item['latitude'].toString());
-          longitude = double.tryParse(item['longitude'].toString());
-        }
-        
-        // 위치 데이터가 없거나 잘못된 경우 무작위 좌표로 대체 (테스트용)
-        if (latitude == null || longitude == null || latitude == 0 || longitude == 0) {
-          // 서울 중심 좌표: 37.5665, 126.978
-          latitude = 37.5665 + (math.Random().nextDouble() * 0.02) - 0.01;  
-          longitude = 126.978 + (math.Random().nextDouble() * 0.02) - 0.01;
-        }
-        
-        _markers.add(
-          Marker(
-            markerId: MarkerId('place_$i'),
-            position: LatLng(latitude, longitude),
-            infoWindow: InfoWindow(
-              title: item['name'] ?? '장소 ${i+1}',
-              snippet: _formatTime(item['startTime'], item['endTime']),
+
+      // ✅ 데이터베이스에서 온 실제 좌표 사용
+      if (item['latitude'] != null && item['longitude'] != null) {
+        double latitude = double.tryParse(item['latitude'].toString()) ?? 0.0;
+        double longitude = double.tryParse(item['longitude'].toString()) ?? 0.0;
+
+        // ✅ 유효한 좌표인지 확인 (0이 아닌 실제 좌표)
+        if (latitude != 0.0 && longitude != 0.0) {
+          print('✅ 실제 좌표 사용: ${item['name']} - lat: $latitude, lng: $longitude');
+
+          _markers.add(
+            Marker(
+              markerId: MarkerId('place_$i'),
+              position: LatLng(latitude, longitude), // ✅ DB에서 온 실제 좌표
+              infoWindow: InfoWindow(
+                title: item['name'] ?? '장소 ${i+1}',
+                snippet: _formatTime(item['startTime'], item['endTime']),
+              ),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                  i == 0 ? BitmapDescriptor.hueGreen :
+                  i == items.length - 1 ? BitmapDescriptor.hueRed :
+                  BitmapDescriptor.hueAzure
+              ),
             ),
-            icon: BitmapDescriptor.defaultMarkerWithHue(
-              i == 0 ? BitmapDescriptor.hueGreen : 
-              i == items.length - 1 ? BitmapDescriptor.hueRed : 
-              BitmapDescriptor.hueAzure
-            ),
-          ),
-        );
+          );
+        } else {
+          print('❌ 좌표가 0,0입니다: ${item['name']}');
+        }
+      } else {
+        print('❌ 좌표 정보가 없습니다: ${item['name']}');
       }
     }
 
-    // 경로 라인 생성
-    if (_scheduleDetail['segments'] != null && _scheduleDetail['segments'].isNotEmpty) {
+    // ✅ 실제 좌표로 경로 라인 생성
+    if (_markers.length >= 2) {
       _polylines.clear();
-      List<dynamic> segments = _scheduleDetail['segments'];
-      
-      List<LatLng> points = [];
-      for (int i = 0; i < items.length; i++) {
-        final item = items[i];
-        double? latitude;
-        double? longitude;
-        
-        if (item.containsKey('latitude') && item.containsKey('longitude')) {
-          latitude = double.tryParse(item['latitude'].toString());
-          longitude = double.tryParse(item['longitude'].toString());
-        }
-        
-        if (latitude != null && longitude != null && latitude != 0 && longitude != 0) {
-          points.add(LatLng(latitude, longitude));
-        }
-      }
-      
-      if (points.length >= 2) {
-        _polylines.add(
-          Polyline(
-            polylineId: const PolylineId('route'),
-            points: points,
-            color: Colors.blue,
-            width: 5,
-          ),
-        );
-      }
+      List<LatLng> points = _markers.map((marker) => marker.position).toList();
+
+      _polylines.add(
+        Polyline(
+          polylineId: const PolylineId('route'),
+          points: points,
+          color: Colors.blue,
+          width: 5,
+        ),
+      );
     }
   }
 
