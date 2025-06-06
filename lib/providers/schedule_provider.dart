@@ -3,19 +3,20 @@ import 'package:geolocator/geolocator.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/schedule.dart';
+import '../models/multiple_schedule_request.dart';
+import '../models/multiple_schedule_response.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../providers/auth_provider.dart'; // AuthProvider import 추가
+import '../providers/auth_provider.dart';
 
 class ScheduleProvider with ChangeNotifier {
   List<Schedule> _schedules = [];
   bool _isLoading = false;
   String? _error;
-  // final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8081/api/v1';
   final baseUrl = 'https://port-0-capston-m8dskoec57d8f7b3.sel4.cloudtype.app/api/v1';
-  final AuthProvider authProvider; // AuthProvider 인스턴스 추가
+  // final baseUrl = 'http://192.168.11.1:8086/api/v1';
+  final AuthProvider authProvider;
 
-  // 생성자를 통해 AuthProvider 주입받기
   ScheduleProvider({required this.authProvider});
 
   List<Schedule> get schedules => _schedules;
@@ -24,29 +25,26 @@ class ScheduleProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  // AuthProvider로부터 토큰 가져오기
   Future<String?> getToken() async {
-    return authProvider.getToken(); // AuthProvider의 getToken 메서드 사용
+    return authProvider.getToken();
   }
 
-  // 거리 계산 함수 추가
   double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
     return Geolocator.distanceBetween(lat1, lon1, lat2, lon2);
   }
 
-// lib/providers/schedule_provider.dart
-  Future<Map<String, dynamic>> optimizeSchedules(List<Map<String, dynamic>> schedules) async {
+  // 기존 optimizeSchedules 메소드를 다중 최적화로 완전히 교체
+  Future<MultipleOptimizeResponse> optimizeSchedules(List<Map<String, dynamic>> schedules) async {
     try {
       _isLoading = true;
       notifyListeners();
 
-      print('Submitting schedules: $schedules');
+      print('Submitting schedules for multiple optimization: $schedules');
 
       // 좌표값 수정
       schedules = schedules.map((schedule) {
         Map<String, dynamic> copy = Map<String, dynamic>.from(schedule);
 
-        // 너무 큰 좌표값 수정
         if (copy['latitude'] != null) {
           double lat = copy['latitude'];
           double lng = copy['longitude'];
@@ -61,47 +59,72 @@ class ScheduleProvider with ChangeNotifier {
         return copy;
       }).toList();
 
+      // 단일 옵션을 다중 옵션 형태로 변환
+      List<ScheduleOption> options = [];
+
       final fixedSchedules = schedules
           .where((s) => s['type'] == 'FIXED')
+          .map((s) => FixedScheduleDTO(
+        id: s['id'],
+        name: s['name'],
+        type: s['type'],
+        duration: s['duration'],
+        priority: s['priority'],
+        location: s['location'],
+        latitude: s['latitude'],
+        longitude: s['longitude'],
+        startTime: s['startTime'],
+        endTime: s['endTime'],
+      ))
           .toList();
 
       final flexibleSchedules = schedules
           .where((s) => s['type'] == 'FLEXIBLE')
+          .map((s) => FlexibleScheduleDTO(
+        id: s['id'],
+        name: s['name'],
+        type: s['type'],
+        duration: s['duration'],
+        priority: s['priority'],
+      ))
           .toList();
 
-      final requestBody = {
-        'fixedSchedules': fixedSchedules,
-        'flexibleSchedules': flexibleSchedules
-      };
+      // 단일 옵션만 생성 (나중에 UI에서 여러 옵션을 만들 수 있음)
+      options.add(ScheduleOption(
+        optionId: 1,
+        fixedSchedules: fixedSchedules,
+        flexibleSchedules: flexibleSchedules,
+      ));
 
-      print('Sending request to server: ${json.encode(requestBody)}');
+      final request = MultipleScheduleOptimizationRequest(options: options);
 
-      // 인증 토큰 가져오기
+      print('Sending multiple optimization request: ${json.encode(request.toJson())}');
+
       final token = await getToken();
       if (token == null) {
         throw Exception('인증 토큰이 없습니다. 로그인이 필요합니다.');
       }
 
       final response = await http.post(
-          Uri.parse('$baseUrl/schedules/optimize-1'),
+          Uri.parse('$baseUrl/schedules/optimize-multiple'),
           headers: {
-            'Content-Type': 'application/json; charset=utf-8',  // ✅ charset 추가
-            'Accept': 'application/json; charset=utf-8',        // ✅ Accept 헤더 추가
+            'Content-Type': 'application/json; charset=utf-8',
+            'Accept': 'application/json; charset=utf-8',
             'Authorization': 'Bearer $token'
           },
-          body: utf8.encode(json.encode(requestBody)));
+          body: utf8.encode(json.encode(request.toJson())));
 
       if (response.statusCode == 200) {
         final jsonString = utf8.decode(response.bodyBytes);
         final responseData = json.decode(jsonString);
         _isLoading = false;
         notifyListeners();
-        return responseData;
+        return MultipleOptimizeResponse.fromJson(responseData);
       } else {
         throw Exception('서버 응답 오류: ${response.statusCode}\n${response.body}');
       }
     } catch (e, stackTrace) {
-      print('Error during optimization: $e');
+      print('Error during multiple optimization: $e');
       print('Stack trace: $stackTrace');
       _error = e.toString();
       _isLoading = false;
@@ -109,7 +132,109 @@ class ScheduleProvider with ChangeNotifier {
       throw Exception('일정 최적화 중 오류가 발생했습니다: $e');
     }
   }
-// 가장 적합한 장소 찾기
+
+  // 진짜 다중 옵션 최적화 메소드 (여러 옵션을 받을 때)
+  Future<MultipleOptimizeResponse> optimizeMultipleScheduleOptions(List<List<Map<String, dynamic>>> scheduleOptions) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      List<ScheduleOption> options = [];
+
+      for (int i = 0; i < scheduleOptions.length; i++) {
+        List<Map<String, dynamic>> schedules = scheduleOptions[i];
+
+        // 좌표값 수정
+        schedules = schedules.map((schedule) {
+          Map<String, dynamic> copy = Map<String, dynamic>.from(schedule);
+
+          if (copy['latitude'] != null) {
+            double lat = copy['latitude'];
+            double lng = copy['longitude'];
+
+            if (lat > 180) {
+              copy['latitude'] = lat / 10000000;
+            }
+            if (lng > 180) {
+              copy['longitude'] = lng / 10000000;
+            }
+          }
+          return copy;
+        }).toList();
+
+        final fixedSchedules = schedules
+            .where((s) => s['type'] == 'FIXED')
+            .map((s) => FixedScheduleDTO(
+          id: s['id'],
+          name: s['name'],
+          type: s['type'],
+          duration: s['duration'],
+          priority: s['priority'],
+          location: s['location'],
+          latitude: s['latitude'],
+          longitude: s['longitude'],
+          startTime: s['startTime'],
+          endTime: s['endTime'],
+        ))
+            .toList();
+
+        final flexibleSchedules = schedules
+            .where((s) => s['type'] == 'FLEXIBLE')
+            .map((s) => FlexibleScheduleDTO(
+          id: s['id'],
+          name: s['name'],
+          type: s['type'],
+          duration: s['duration'],
+          priority: s['priority'],
+        ))
+            .toList();
+
+        options.add(ScheduleOption(
+          optionId: i + 1,
+          fixedSchedules: fixedSchedules,
+          flexibleSchedules: flexibleSchedules,
+        ));
+      }
+
+      final request = MultipleScheduleOptimizationRequest(options: options);
+
+      print('Sending multiple optimization request: ${request.toJson()}');
+
+      final token = await getToken();
+      if (token == null) {
+        throw Exception('인증 토큰이 없습니다. 로그인이 필요합니다.');
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/schedules/optimize-multiple'),
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Accept': 'application/json; charset=utf-8',
+          'Authorization': 'Bearer $token'
+        },
+        body: utf8.encode(json.encode(request.toJson())),
+      );
+
+      if (response.statusCode == 200) {
+        final jsonString = utf8.decode(response.bodyBytes);
+        final responseData = json.decode(jsonString);
+        _isLoading = false;
+        notifyListeners();
+        return MultipleOptimizeResponse.fromJson(responseData);
+      } else {
+        throw Exception('서버 응답 오류: ${response.statusCode}\n${response.body}');
+      }
+    } catch (e, stackTrace) {
+      print('Error during multiple optimization: $e');
+      print('Stack trace: $stackTrace');
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      throw Exception('다중 일정 최적화 중 오류가 발생했습니다: $e');
+    }
+  }
+
+  // 나머지 기존 메소드들은 그대로 유지
   Map<String, dynamic> findBestPlace(
       List<Map<String, dynamic>> places,
       Map<String, dynamic> prevSchedule,
@@ -122,13 +247,11 @@ class ScheduleProvider with ChangeNotifier {
     });
   }
 
-// 장소 점수 계산
   double calculatePlaceScore(
       Map<String, dynamic> place,
       Map<String, dynamic> prevSchedule,
       Map<String, dynamic> nextSchedule,
       ) {
-    // 1. 이전 일정과의 거리
     final distFromPrev = calculateDistance(
       prevSchedule['latitude'],
       prevSchedule['longitude'],
@@ -136,7 +259,6 @@ class ScheduleProvider with ChangeNotifier {
       place['longitude'],
     );
 
-    // 2. 다음 일정과의 거리
     final distToNext = calculateDistance(
       place['latitude'],
       place['longitude'],
@@ -144,29 +266,26 @@ class ScheduleProvider with ChangeNotifier {
       nextSchedule['longitude'],
     );
 
-    // 거리가 짧을수록 높은 점수
     return 1000 / (distFromPrev + distToNext);
   }
+
   void createMultipleSchedules(List<Map<String, dynamic>> schedulesData) {
     try {
       _isLoading = true;
       notifyListeners();
 
-      // 시작 시간 기준으로 정렬
       schedulesData.sort((a, b) {
         DateTime aTime = DateTime.parse(a['startTime'] as String);
         DateTime bTime = DateTime.parse(b['startTime'] as String);
         return aTime.compareTo(bTime);
       });
 
-      // 시간 중복 체크 및 조정
       for (int i = 1; i < schedulesData.length; i++) {
         DateTime prevEnd = DateTime.parse(schedulesData[i - 1]['endTime']);
         DateTime currStart = DateTime.parse(schedulesData[i]['startTime']);
         int duration = schedulesData[i]['duration'] as int;
 
         if (currStart.isBefore(prevEnd) || currStart.isAtSameMomentAs(prevEnd)) {
-          // 이전 일정 종료 시간 이후로 시작 시간 조정 (5분 버퍼 추가)
           DateTime newStart = prevEnd.add(const Duration(minutes: 5));
           schedulesData[i]['startTime'] = newStart.toIso8601String();
           schedulesData[i]['endTime'] = newStart
@@ -175,9 +294,7 @@ class ScheduleProvider with ChangeNotifier {
         }
       }
 
-      // 좌표값 형식 변환 및 일정 생성
       List<Schedule> newSchedules = schedulesData.map((data) {
-        // 좌표값 변환 (정수형인 경우에만)
         double latitude = data['latitude'] is int
             ? (data['latitude'] as int) / 10000000.0
             : (data['latitude'] as num).toDouble();
@@ -199,7 +316,6 @@ class ScheduleProvider with ChangeNotifier {
         );
       }).toList();
 
-      // 기존 일정에 추가
       _schedules.addAll(newSchedules);
 
       _error = null;
@@ -213,7 +329,6 @@ class ScheduleProvider with ChangeNotifier {
       throw Exception('Failed to create schedules: ${e.toString()}');
     }
   }
-
 
   void deleteSchedule(String id) {
     _schedules.removeWhere((schedule) => schedule.id == id);
@@ -247,7 +362,6 @@ class ScheduleProvider with ChangeNotifier {
     }
   }
 
-  // 날짜별로 일정을 그룹화
   Map<DateTime, List<Schedule>> groupSchedulesByDay() {
     final Map<DateTime, List<Schedule>> grouped = {};
 
@@ -265,7 +379,6 @@ class ScheduleProvider with ChangeNotifier {
       grouped[date]!.add(schedule);
     }
 
-    // 각 그룹 내에서 시작 시간순으로 정렬
     for (final schedules in grouped.values) {
       schedules.sort((a, b) => a.startTime.compareTo(b.startTime));
     }

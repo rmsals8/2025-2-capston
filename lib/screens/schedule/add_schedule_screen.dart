@@ -575,18 +575,27 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
       }).toList();
 
       print('변환된 좌표로 제출: $formattedSchedules');
-      final optimizedData = await scheduleProvider.optimizeSchedules(formattedSchedules);
+
+      // 다중 최적화 API 호출 (단일 옵션이지만 다중 API 사용)
+      final multipleResponse = await scheduleProvider.optimizeSchedules(formattedSchedules);
 
       if (!mounted) return;
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => OptimizedScheduleScreen(
-            optimizedData: optimizedData,
+      // 첫 번째 옵션의 결과를 기존 OptimizedScheduleScreen으로 전달
+      if (multipleResponse.optimizedOptions.isNotEmpty) {
+        final firstOption = multipleResponse.optimizedOptions.first;
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OptimizedScheduleScreen(
+              optimizedData: firstOption.result,
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        throw Exception('최적화 결과가 없습니다.');
+      }
     } catch (e) {
       if (!mounted) return;
 

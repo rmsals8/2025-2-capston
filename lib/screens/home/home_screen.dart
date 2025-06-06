@@ -1,6 +1,6 @@
 // lib/screens/home/home_screen.dart
 import 'dart:math';
-
+import '../schedule/multiple_options_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
@@ -53,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _speechEnabled = false;
   bool _isListening = false;
   String _lastRecognizedText = "";
-
+  bool _autoProcessVoice = true;
   bool _isLoading = true;
   int _currentCarouselIndex = 0;
 
@@ -114,10 +114,18 @@ class _HomeScreenState extends State<HomeScreen> {
           _lastRecognizedText = result.recognizedWords;
           _searchController.text = _lastRecognizedText;
         });
-      },
-      localeId: 'ko_KR', // 한국어
-    );
 
+        // ✅ 음성 인식이 끝났고, 자동 처리 모드이고, 결과가 있으면 자동으로 처리
+        if (result.finalResult && _autoProcessVoice && result.recognizedWords.isNotEmpty) {
+          Future.delayed(Duration(milliseconds: 500), () {
+            if (mounted) {
+              _processScheduleVoiceInput(result.recognizedWords);
+            }
+          });
+        }
+      },
+      localeId: 'ko_KR',
+    );
     // 사용자에게 듣고 있다는 피드백 제공
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -125,13 +133,14 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(Icons.mic, color: Colors.white),
             SizedBox(width: 8),
-            Text('듣고 있습니다...'),
+            Text(_autoProcessVoice ? '듣고 있습니다... (자동 처리)' : '듣고 있습니다...'),
           ],
         ),
         duration: Duration(seconds: 1),
-        backgroundColor: Colors.blue,
+        backgroundColor: _autoProcessVoice ? Colors.green : Colors.blue,
       ),
     );
+
   }
 
   // 새로운 음성 인식 중지 메소드
@@ -141,6 +150,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // 음성으로 인식된 일정 처리 메소드 추가
+  // HomeScreen의 _processScheduleVoiceInput 메소드를 이렇게 수정하세요
+
+// 음성으로 인식된 일정 처리 메소드 수정
   Future<void> _processScheduleVoiceInput(String voiceText) async {
     if (voiceText.isEmpty) return;
 
@@ -150,33 +162,145 @@ class _HomeScreenState extends State<HomeScreen> {
     // 일정 추가 여부 확인 다이얼로그
     bool shouldProcess = await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('음성 인식 완료'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('다음 내용을 일정으로 추가할까요?'),
-            SizedBox(height: 8),
-            Text(
-              voiceText,
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
+      barrierDismissible: false, // 바깥 영역 터치로 닫기 방지
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 아이콘
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.mic,
+                  size: 32,
+                  color: Colors.blue[600],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // 제목
+              const Text(
+                '음성 인식 완료',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // 설명 텍스트
+              Text(
+                '다음 내용을 일정으로 추가할까요?',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+
+              // 인식된 텍스트 박스
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: Text(
+                  voiceText,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // 버튼들
+              Row(
+                children: [
+                  // 취소 버튼
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.grey[700],
+                          side: BorderSide(color: Colors.grey[300]!),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          '취소',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+
+                  // 일정 추가 버튼
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          '일정 추가',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text('일정 추가'),
-          ),
-        ],
       ),
     ) ?? false;
-
     print('User confirmed processing: $shouldProcess'); // 영어 로그
     print('사용자 처리 확인: $shouldProcess'); // 한글 로그
 
@@ -197,75 +321,125 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // AWS Lambda API 호출로 처리
       final scheduleData = await _processScheduleDataWithLambda(voiceText);
-    print('Calling AWS Lambda API...'); // 영어 로그
-    print('AWS Lambda API 호출 중...'); // 한글 로그
+      print('Calling AWS Lambda API...'); // 영어 로그
+      print('AWS Lambda API 호출 중...'); // 한글 로그
+
       // 로딩 다이얼로그 닫기
       Navigator.of(context).pop();
 
       if (scheduleData != null) {
-        print('Schedule data processed successfully: $scheduleData'); // 영어 로그
-        print('일정 데이터 처리 성공: $scheduleData'); // 한글 로그
+        print('Schedule data processed successfully: $scheduleData');
+        print('일정 데이터 처리 성공: $scheduleData');
 
         // scheduleProvider를 이용해 최적화 요청
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final provider = ScheduleProvider(authProvider: authProvider);
 
         try {
-          print('Optimizing schedules...'); // 영어 로그
-          print('일정 최적화 중...'); // 한글 로그
+          print('Optimizing schedules...');
+          print('일정 최적화 중...');
 
-          // scheduleData에서 fixedSchedules와 flexibleSchedules를 추출
-          List<Map<String, dynamic>> schedulesToOptimize = [];
+          // ✅ Lambda 응답 구조 변경에 따른 수정
+          // 새로운 구조: { "options": [ { "optionId": 1, "fixedSchedules": [...], "flexibleSchedules": [...] } ] }
 
-          // 고정 일정 추가
-          if (scheduleData.containsKey('fixedSchedules') &&
-              scheduleData['fixedSchedules'] is List) {
-            List<dynamic> fixedSchedules = scheduleData['fixedSchedules'];
-            schedulesToOptimize.addAll(
-                fixedSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
-            );
-            print('Added ${fixedSchedules.length} fixed schedules'); // 영어 로그
-            print('${fixedSchedules.length}개의 고정 일정 추가됨'); // 한글 로그
+          List<List<Map<String, dynamic>>> allScheduleOptions = [];
+
+          // Lambda에서 받은 여러 옵션을 처리
+          if (scheduleData.containsKey('options') && scheduleData['options'] is List) {
+            List<dynamic> options = scheduleData['options'];
+
+            for (var option in options) {
+              if (option is Map<String, dynamic>) {
+                List<Map<String, dynamic>> singleOptionSchedules = [];
+
+                // 고정 일정 추가
+                if (option.containsKey('fixedSchedules') && option['fixedSchedules'] is List) {
+                  List<dynamic> fixedSchedules = option['fixedSchedules'];
+                  singleOptionSchedules.addAll(
+                      fixedSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
+                  );
+                  print('Added ${fixedSchedules.length} fixed schedules from option ${option['optionId']}');
+                  print('옵션 ${option['optionId']}에서 ${fixedSchedules.length}개의 고정 일정 추가됨');
+                }
+
+                // 유연한 일정 추가
+                if (option.containsKey('flexibleSchedules') && option['flexibleSchedules'] is List) {
+                  List<dynamic> flexibleSchedules = option['flexibleSchedules'];
+                  singleOptionSchedules.addAll(
+                      flexibleSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
+                  );
+                  print('Added ${flexibleSchedules.length} flexible schedules from option ${option['optionId']}');
+                  print('옵션 ${option['optionId']}에서 ${flexibleSchedules.length}개의 유연한 일정 추가됨');
+                }
+
+                // 일정이 있는 옵션만 추가
+                if (singleOptionSchedules.isNotEmpty) {
+                  allScheduleOptions.add(singleOptionSchedules);
+                }
+              }
+            }
           }
 
-          // 유연한 일정 추가
-          if (scheduleData.containsKey('flexibleSchedules') &&
-              scheduleData['flexibleSchedules'] is List) {
-            List<dynamic> flexibleSchedules = scheduleData['flexibleSchedules'];
-            schedulesToOptimize.addAll(
-                flexibleSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
-            );
-            print('Added ${flexibleSchedules.length} flexible schedules'); // 영어 로그
-            print('${flexibleSchedules.length}개의 유연한 일정 추가됨'); // 한글 로그
+          print('Total schedule options to process: ${allScheduleOptions.length}');
+          print('처리할 일정 옵션 총 개수: ${allScheduleOptions.length}');
+
+          if (allScheduleOptions.isEmpty) {
+            throw Exception('처리할 일정 데이터가 없습니다.');
           }
 
-          // 최적화 메소드 호출
-          final optimizedData = await provider.optimizeSchedules(schedulesToOptimize);
-          print('Schedule optimization successful'); // 영어 로그
-          print('일정 최적화 성공'); // 한글 로그
+          // ✅ 다중 옵션이 있으면 다중 최적화, 단일 옵션이면 단일 최적화
+          if (allScheduleOptions.length > 1) {
+            // 여러 옵션이 있으면 다중 옵션 비교 화면으로
+            print('Multiple options detected, using multiple optimization');
+            print('다중 옵션 감지, 다중 최적화 사용');
 
-          // 최적화된 일정 화면으로 이동
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => OptimizedScheduleScreen(
-                optimizedData: optimizedData,
+            final multipleOptimizeResponse = await provider.optimizeMultipleScheduleOptions(allScheduleOptions);
+
+            // 다중 옵션 비교 화면으로 이동
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => MultipleOptionsScreen(
+                  multipleResponse: multipleOptimizeResponse,
+                ),
               ),
-            ),
-          );
+            );
+          } else {
+            // 단일 옵션이면 기존 방식 사용
+            print('Single option detected, using single optimization');
+            print('단일 옵션 감지, 단일 최적화 사용');
+
+            final multipleOptimizeResponse = await provider.optimizeSchedules(allScheduleOptions.first);
+
+            if (multipleOptimizeResponse.optimizedOptions.isNotEmpty) {
+              final firstOption = multipleOptimizeResponse.optimizedOptions.first;
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => OptimizedScheduleScreen(
+                    optimizedData: firstOption.result,
+                  ),
+                ),
+              );
+            } else {
+              throw Exception('최적화 결과가 없습니다.');
+            }
+          }
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('음성으로 일정이 추가되었습니다!')),
           );
+
         } catch (e) {
-          print('Error optimizing schedules: $e'); // 영어 로그
-          print('일정 최적화 오류: $e'); // 한글 로그
+          print('Error optimizing schedules: $e');
+          print('일정 최적화 오류: $e');
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('일정 최적화 중 오류가 발생했습니다: $e')),
           );
         }
-      } else {
+      }else {
         print('Failed to extract schedule data from voice input'); // 영어 로그
         print('음성 입력에서 일정 데이터 추출 실패'); // 한글 로그
 
@@ -996,15 +1170,75 @@ Future<void> _loadData() async {
       ),
       child: Column(
         children: [
+          // 자동 처리 토글 추가
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Icon(
+                  _autoProcessVoice ? Icons.auto_awesome : Icons.touch_app,
+                  size: 20,
+                  color: _autoProcessVoice ? Colors.green[600] : Colors.grey[600],
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _autoProcessVoice ? '자동 처리 모드' : '수동 처리 모드',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: _autoProcessVoice ? Colors.green[700] : Colors.grey[700],
+                    ),
+                  ),
+                ),
+                Switch(
+                  value: _autoProcessVoice,
+                  onChanged: (value) {
+                    setState(() {
+                      _autoProcessVoice = value;
+                    });
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            value
+                                ? '자동 처리 모드: 음성 인식 후 바로 일정 추가 다이얼로그가 나타납니다'
+                                : '수동 처리 모드: 버튼을 눌러서 일정을 추가하세요'
+                        ),
+                        duration: Duration(seconds: 2),
+                        backgroundColor: value ? Colors.green[600] : Colors.grey[600],
+                      ),
+                    );
+                  },
+                  activeColor: Colors.green[600],
+                  activeTrackColor: Colors.green[200],
+                ),
+              ],
+            ),
+          ),
+
+          // 기존 검색바
           Row(
             children: [
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: GestureDetector(
                   onTap: _isListening ? _stopListening : _startListening,
-                  child: Icon(
-                    _isListening ? Icons.mic : Icons.mic_none,
-                    color: _isListening ? Colors.blue : Colors.grey[400],
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: _isListening
+                          ? (_autoProcessVoice ? Colors.green[100] : Colors.blue[100])
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      _isListening ? Icons.mic : Icons.mic_none,
+                      color: _isListening
+                          ? (_autoProcessVoice ? Colors.green[600] : Colors.blue[600])
+                          : Colors.grey[400],
+                      size: 24,
+                    ),
                   ),
                 ),
               ),
@@ -1013,9 +1247,13 @@ Future<void> _loadData() async {
                   controller: _searchController,
                   style: const TextStyle(fontSize: 16),
                   decoration: InputDecoration(
-                    hintText: _isListening ? '말씀하세요...' : '목적지나 경로를 검색하세요',
+                    hintText: _isListening
+                        ? (_autoProcessVoice ? '말씀하세요... (자동 처리)' : '말씀하세요...')
+                        : '목적지나 경로를 검색하세요',
                     hintStyle: TextStyle(
-                      color: _isListening ? Colors.blue : Colors.grey[400],
+                      color: _isListening
+                          ? (_autoProcessVoice ? Colors.green[600] : Colors.blue[600])
+                          : Colors.grey[400],
                       fontStyle: _isListening ? FontStyle.italic : FontStyle.normal,
                     ),
                     border: InputBorder.none,
@@ -1042,23 +1280,27 @@ Future<void> _loadData() async {
               ),
             ],
           ),
-          // 텍스트로 일정 추가 버튼
+
+          // 수동 처리 버튼 (항상 표시하되, 자동 모드일 때는 스타일 변경)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: SizedBox(
               width: double.infinity,
               height: 48,
               child: ElevatedButton.icon(
-                icon: const Icon(Icons.calendar_today, size: 20),
-                label: const Text(
-                  '텍스트로 일정 추가',
-                  style: TextStyle(
+                icon: Icon(
+                    _autoProcessVoice ? Icons.touch_app : Icons.calendar_today,
+                    size: 20
+                ),
+                label: Text(
+                  _autoProcessVoice ? '수동으로 일정 추가' : '텍스트로 일정 추가',
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
+                  backgroundColor: _autoProcessVoice ? Colors.grey[600] : Colors.black,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -1075,6 +1317,22 @@ Future<void> _loadData() async {
                   }
                 },
               ),
+            ),
+          ),
+
+          // 모드 설명 텍스트
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Text(
+              _autoProcessVoice
+                  ? '💡 음성 인식이 끝나면 자동으로 일정 추가 다이얼로그가 나타납니다'
+                  : '💡 음성 인식 후 버튼을 눌러 일정을 추가하세요',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+              textAlign: TextAlign.center,
             ),
           ),
         ],

@@ -457,7 +457,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // 웹 환경과 모바일 환경에 따라 다른 URL 사용
       final apiUrl = kIsWeb
-          ? 'http://localhost:8081/api/v1/auth/login'
+          ? 'http://localhost:8086/api/v1/auth/login'
           : '$baseUrl/auth/login';
 
       print('사용 중인 API URL: $apiUrl');

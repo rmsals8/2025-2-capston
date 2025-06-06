@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../../models/schedule.dart';
+import 'optimized_schedule_screen.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({Key? key}) : super(key: key);
@@ -26,12 +27,33 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       appBar: AppBar(
         title: const Text('스케줄 관리'),
         actions: [
+          // ScheduleScreen의 새로고침 버튼 onPressed 수정
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
+            onPressed: () async {
               final scheduleProvider = context.read<ScheduleProvider>();
               final schedulesMaps = scheduleProvider.schedules.map((schedule) => schedule.toJson()).toList();
-              scheduleProvider.optimizeSchedules(schedulesMaps);
+
+              try {
+                // 다중 최적화 API 호출
+                final multipleResponse = await scheduleProvider.optimizeSchedules(schedulesMaps);
+
+                // 첫 번째 옵션 결과 표시
+                if (multipleResponse.optimizedOptions.isNotEmpty) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => OptimizedScheduleScreen(
+                        optimizedData: multipleResponse.optimizedOptions.first.result,
+                      ),
+                    ),
+                  );
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('최적화 실패: $e')),
+                );
+              }
             },
           ),
         ],
