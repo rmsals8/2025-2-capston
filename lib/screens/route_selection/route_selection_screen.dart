@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import '../../models/route_info.dart';
 import '../../providers/navigation_provider.dart';
 import '../../models/route.dart' as trip_route;
 import '../../widgets/route/navigation_controls.dart';
 import '../../widgets/map/navigation_map.dart';
 import '../navigation/navigation_screen.dart';
 
+import 'dart:math' as math;          // 수학 함수들
 class RouteSelectionScreen extends StatefulWidget {
   final LatLng startLocation;
   final LatLng endLocation;
@@ -208,8 +210,11 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => NavigationScreen(
-                                    startLocation: widget.startLocation,
-                                    endLocation: widget.endLocation,
+                                    route: _createRouteInfo(widget.startLocation, widget.endLocation), // ✅ RouteInfo 객체
+                                    origin: widget.startLocation,      // ✅ origin (startLocation 대신)
+                                    destination: widget.endLocation,   // ✅ destination (endLocation 대신)
+                                    transportMode: 'driving',          // ✅ 교통수단 (기본값: 자동차)
+                                    transitRoute: null,                // ✅ 대중교통 정보 (없음)
                                   ),
                                 ),
                               );
@@ -241,7 +246,37 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
       ),
     );
   }
+  RouteInfo _createRouteInfo(LatLng start, LatLng end) {
+    final distance = _calculateDistance(start, end);
+    final estimatedTime = _calculateEstimatedTime(start, end);
 
+    return RouteInfo(
+      points: [start, end],              // 직선 경로
+      distance: '${distance.toStringAsFixed(1)} km',
+      duration: '예상 ${estimatedTime.round()}분',
+      samplePoints: [start, end],        // 샘플 포인트
+    );
+  }
+  double _calculateDistance(LatLng start, LatLng end) {
+    const double earthRadius = 6371; // 지구 반지름 (km)
+
+    final double lat1Rad = start.latitude * (math.pi / 180);
+    final double lat2Rad = end.latitude * (math.pi / 180);
+    final double dLatRad = (end.latitude - start.latitude) * (math.pi / 180);
+    final double dLngRad = (end.longitude - start.longitude) * (math.pi / 180);
+
+    final double a = math.pow(math.sin(dLatRad / 2), 2) +
+        math.cos(lat1Rad) * math.cos(lat2Rad) *
+            math.pow(math.sin(dLngRad / 2), 2);
+
+    final double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+
+    return earthRadius * c;
+  }
+  double _calculateEstimatedTime(LatLng start, LatLng end) {
+    final distance = _calculateDistance(start, end);
+    return (distance / 40) * 60; // 40km/h 기준, 분 단위
+  }
   void _fitBounds() {
     if (_mapController == null) return;
 

@@ -14,6 +14,7 @@ class PlaceSearchScreen extends StatefulWidget {
 }
 
 class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
+  String? _cachedToken;
   final _searchController = TextEditingController();
   Timer? _searchDebounce;  // Timer 변수 추가
   List<dynamic> _places = [];
@@ -171,7 +172,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                 ),
                 onChanged: (value) {
                   if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
-                  _searchDebounce = Timer(const Duration(milliseconds: 500), () {
+                  _searchDebounce = Timer(const Duration(milliseconds: 200), () {
                     _searchPlaces(value);
                   });
                 },

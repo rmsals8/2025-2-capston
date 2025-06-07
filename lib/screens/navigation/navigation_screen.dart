@@ -1,23 +1,27 @@
-// lib/screens/navigation/navigation_screen.dart
-import '../../models/route.dart' as app_route;  // 이렇게 import 추가
+// lib/screens/navigation_screen.dart
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:provider/provider.dart';
-import '../../providers/navigation_provider.dart';
-import '../../providers/location_provider.dart';
-import '../../widgets/navigation/turn_by_turn_guide.dart';
-import '../../widgets/navigation/navigation_status_panel.dart';
-import 'dart:math' ;
-import '../../providers/route_provider.dart';
+import 'dart:async';
+import 'dart:math' show pi, sin, cos, sqrt, atan2;
+import '../../services/location_service.dart';
+import '../../services/google_transit_service.dart';
+import '../../models/route_info.dart';
+
 class NavigationScreen extends StatefulWidget {
-  final LatLng startLocation;
-  final LatLng endLocation;
-  final String transportMode; // 추가: 이동 수단 정보
+  // 🔧 수정된 생성자 - RouteSelectionBottomSheet와 호환
+  final RouteInfo route;
+  final LatLng origin;
+  final LatLng destination;
+  final String transportMode;
+  final GoogleTransitRoute? transitRoute;
+
   const NavigationScreen({
     Key? key,
-    required this.startLocation,
-    required this.endLocation,
-    this.transportMode = 'DRIVING', // 기본값 설정
+    required this.route,
+    required this.origin,
+    required this.destination,
+    this.transportMode = 'driving',
+    this.transitRoute,
   }) : super(key: key);
 
   @override
@@ -25,263 +29,705 @@ class NavigationScreen extends StatefulWidget {
 }
 
 class _NavigationScreenState extends State<NavigationScreen> {
+  final LocationService _locationService = LocationService();
+
   GoogleMapController? _mapController;
-  bool _isInitialized = false;
-  bool _isMapReady = false;
-  bool _isNavigationInitialized = false;  // 클래스 멤버 변수로 추가
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
-  bool _isLoading = true;
-  String? _errorMessage;
-  bool _isMapInitialized = false;
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_isInitialized) {
-      _initializeNavigation();
-      _isInitialized = true;
-    }
-  }
+  LatLng? _currentLocation;
+  Timer? _locationTimer;
+  int _currentStepIndex = 0;
+  bool _isNavigating = false;
+
+  List<TransitStep> _transitSteps = [];
+  GoogleTransitRoute? _detailedTransitRoute;
+
   @override
   void initState() {
     super.initState();
-    _initializeMap();
+    _loadTransitData();
+    _startNavigation();
   }
-  Future<void> _initializeMap() async {
-    try {
-      final locationProvider = context.read<LocationProvider>();
-      await locationProvider.startTracking();
 
-      setState(() {
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = '위치 추적 시작 실패: $e';
-        _isLoading = false;
-      });
+  Future<void> _loadTransitData() async {
+    if (_isTransitMode) {
+      if (widget.transitRoute != null) {
+        _detailedTransitRoute = widget.transitRoute;
+        _transitSteps = widget.transitRoute!.steps;
+        print('✅ 대중교통 단계 ${_transitSteps.length}개 로드 완료');
+
+        if (mounted) {
+          setState(() {});
+        }
+      }
     }
   }
-  Future<void> _loadMapElements() async {
-    final routeProvider = context.read<RouteProvider>();
-    final markers = await routeProvider.createMarkers();
 
+  bool get _isTransitMode =>
+      widget.transportMode.toLowerCase() == 'transit' ||
+          widget.transportMode.toLowerCase() == 'publictransport';
+
+  void _startNavigation() {
     setState(() {
-      _markers = markers;
-      _polylines = routeProvider.createPolylines();
+      _isNavigating = true;
     });
+    _locationTimer = Timer.periodic(
+      const Duration(seconds: 5),
+          (_) => _updateCurrentLocation(),
+    );
   }
-  void _updateMapElements() {
+
+  void _pauseNavigation() {
+    setState(() {
+      _isNavigating = false;
+    });
+    _locationTimer?.cancel();
+  }
+
+  void _resumeNavigation() {
+    _startNavigation();
+  }
+
+  Future<void> _updateCurrentLocation() async {
     try {
-      final routeProvider = context.read<RouteProvider>();
+      final position = await _locationService.getCurrentLocation();
+      if (!mounted) return;
 
-      // 마커 생성
-      _markers = {
-        Marker(
-          markerId: const MarkerId('start'),
-          position: widget.startLocation,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          infoWindow: const InfoWindow(title: '출발지'),
-        ),
-        Marker(
-          markerId: const MarkerId('end'),
-          position: widget.endLocation,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: const InfoWindow(title: '도착지'),
-        ),
-      };
+      setState(() {
+        _currentLocation = LatLng(position.latitude, position.longitude);
+      });
 
-      // 경로선 생성 (단순 직선)
-      _polylines = {
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: [widget.startLocation, widget.endLocation],
-          color: _getTransportModeColor(widget.transportMode),
-          width: 5,
-        ),
-      };
-
-      setState(() {});
-
-      // 지도 중심 이동
-      _fitMapToBounds();
+      if (_isNavigating) {
+        _updateCamera();
+        _checkArrival();
+      }
     } catch (e) {
-      print('Map elements update error: $e');
+      print('위치 업데이트 실패: $e');
     }
   }
 
-  Color _getTransportModeColor(String transportMode) {
-    switch (transportMode.toUpperCase()) {
-      case 'WALK':
+  void _updateCamera() {
+    if (_currentLocation != null && _mapController != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: _currentLocation!,
+            zoom: _isTransitMode ? 15 : 17,
+            tilt: _isTransitMode ? 0 : 45,
+          ),
+        ),
+      );
+    }
+  }
+
+  void _checkArrival() {
+    if (_currentLocation == null) return;
+
+    if (_calculateDistance(_currentLocation!, widget.destination) < 100) {
+      _showArrivalDialog();
+    }
+  }
+
+  double _calculateDistance(LatLng p1, LatLng p2) {
+    const double earthRadius = 6371000;
+    final lat1 = p1.latitude * (pi / 180);
+    final lat2 = p2.latitude * (pi / 180);
+    final dLat = (p2.latitude - p1.latitude) * (pi / 180);
+    final dLng = (p2.longitude - p1.longitude) * (pi / 180);
+
+    final a = sin(dLat/2) * sin(dLat/2) +
+        cos(lat1) * cos(lat2) *
+            sin(dLng/2) * sin(dLng/2);
+    final c = 2 * atan2(sqrt(a), sqrt(1-a));
+
+    return earthRadius * c;
+  }
+
+  String _getTransportModeIcon() {
+    if (_transitSteps.isNotEmpty && _currentStepIndex < _transitSteps.length) {
+      final currentStep = _transitSteps[_currentStepIndex];
+
+      switch (currentStep.mode) {
+        case 'WALKING':
+          return '🚶‍♂️';
+        case 'TRANSIT':
+          switch (currentStep.transitType?.toLowerCase()) {
+            case 'subway':
+              return '🚇';
+            case 'bus':
+              return '🚌';
+            default:
+              return '🚌';
+          }
+        default:
+          return '🚌';
+      }
+    }
+
+    return _isTransitMode ? '🚌' : '🚗';
+  }
+
+  Color _getRouteColor() {
+    switch (widget.transportMode.toLowerCase()) {
+      case 'walking':
+      case 'pedestrian':
         return Colors.green;
-      case 'TRANSIT':
+      case 'driving':
+      case 'car':
         return Colors.blue;
-      case 'DRIVING':
-        return Colors.red;
+      case 'transit':
+      case 'publictransport':
+        return Colors.orange;
       default:
-        return Colors.purple;
+        return Colors.blue;
     }
   }
 
-  void _fitMapToBounds() {
-    if (_mapController == null) return;
+  Color _getStepColor(int stepIndex, TransitStep step) {
+    if (step.mode == 'WALKING') {
+      return Colors.green;
+    } else if (step.mode == 'TRANSIT') {
+      switch (step.transitType?.toLowerCase()) {
+        case 'subway':
+          if (step.transitLine?.contains('1호선') == true) return Color(0xFF0052A4);
+          if (step.transitLine?.contains('2호선') == true) return Color(0xFF00A84D);
+          if (step.transitLine?.contains('3호선') == true) return Color(0xFFEF7C1C);
+          if (step.transitLine?.contains('4호선') == true) return Color(0xFF00A5DE);
+          if (step.transitLine?.contains('5호선') == true) return Color(0xFF996CAC);
+          if (step.transitLine?.contains('6호선') == true) return Color(0xFFCD7C2F);
+          if (step.transitLine?.contains('7호선') == true) return Color(0xFF747F00);
+          if (step.transitLine?.contains('8호선') == true) return Color(0xFFE6186C);
+          if (step.transitLine?.contains('9호선') == true) return Color(0xFFBB8336);
+          return Colors.blue;
+        case 'bus':
+          return Colors.orange;
+        default:
+          return Colors.purple;
+      }
+    }
 
-    // 마커들을 포함하는 영역 계산
-    final double minLat = widget.startLocation.latitude < widget.endLocation.latitude
-        ? widget.startLocation.latitude : widget.endLocation.latitude;
-    final double maxLat = widget.startLocation.latitude > widget.endLocation.latitude
-        ? widget.startLocation.latitude : widget.endLocation.latitude;
-    final double minLng = widget.startLocation.longitude < widget.endLocation.longitude
-        ? widget.startLocation.longitude : widget.endLocation.longitude;
-    final double maxLng = widget.startLocation.longitude > widget.endLocation.longitude
-        ? widget.startLocation.longitude : widget.endLocation.longitude;
-
-    // 여백 추가
-    final LatLngBounds bounds = LatLngBounds(
-      southwest: LatLng(minLat - 0.01, minLng - 0.01),
-      northeast: LatLng(maxLat + 0.01, maxLng + 0.01),
-    );
-
-    // 지도 이동
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 50),
-    );
+    final colors = [
+      Colors.blue,
+      Colors.red,
+      Colors.green,
+      Colors.purple,
+      Colors.orange,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+    ];
+    return colors[stepIndex % colors.length];
   }
 
+  IconData _getStepIcon(TransitStep step) {
+    switch (step.mode) {
+      case 'WALKING':
+        return Icons.directions_walk;
+      case 'TRANSIT':
+        switch (step.transitType?.toLowerCase()) {
+          case 'subway':
+            return Icons.subway;
+          case 'bus':
+            return Icons.directions_bus;
+          default:
+            return Icons.directions_transit;
+        }
+      default:
+        return Icons.place;
+    }
+  }
 
+  Set<Marker> _getTransitMarkers() {
+    Set<Marker> markers = {};
 
-  Set<Marker> _createMarkers() {
-    final Set<Marker> markers = {};
-    final routeProvider = context.read<RouteProvider>();
+    markers.add(Marker(
+      markerId: MarkerId('origin'),
+      position: widget.origin,
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+      infoWindow: InfoWindow(title: '출발지'),
+    ));
 
-    routeProvider.routes.asMap().forEach((index, route) {
-      // 시작점 마커
-      markers.add(
-        Marker(
-          markerId: MarkerId('start_$index'),
-          position: LatLng(
-              route.segments.first.startLat,
-              route.segments.first.startLon
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              (index * 30.0) % 330.0  // 다른 색상의 마커
-          ),
-          infoWindow: InfoWindow(title: route.segments.first.startLocation),
-        ),
-      );
+    markers.add(Marker(
+      markerId: MarkerId('destination'),
+      position: widget.destination,
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      infoWindow: InfoWindow(title: '목적지'),
+    ));
 
-      // 도착점 마커
-      markers.add(
-        Marker(
-          markerId: MarkerId('end_$index'),
-          position: LatLng(
-              route.segments.last.endLat,
-              route.segments.last.endLon
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              (index * 30.0) % 330.0
-          ),
-          infoWindow: InfoWindow(title: route.segments.last.endLocation),
-        ),
-      );
-    });
+    if (!_isTransitMode || _transitSteps.isEmpty) {
+      return markers;
+    }
 
+    for (int i = 0; i < _transitSteps.length; i++) {
+      final step = _transitSteps[i];
+
+      if (step.mode == 'TRANSIT') {
+        if (step.departureStopLocation != null && step.departureStop != null) {
+          double hue;
+          String icon;
+          switch (step.transitType?.toLowerCase()) {
+            case 'subway':
+              hue = BitmapDescriptor.hueBlue;
+              icon = '🚇';
+              break;
+            case 'bus':
+              hue = BitmapDescriptor.hueOrange;
+              icon = '🚌';
+              break;
+            default:
+              hue = BitmapDescriptor.hueViolet;
+              icon = '🚌';
+          }
+
+          markers.add(Marker(
+            markerId: MarkerId('departure_stop_$i'),
+            position: step.departureStopLocation!,
+            icon: BitmapDescriptor.defaultMarkerWithHue(hue),
+            infoWindow: InfoWindow(
+              title: '$icon ${step.departureStop}',
+              snippet: '${step.transitLine} 승차 • ${step.departureTime ?? ""}',
+            ),
+          ));
+        }
+
+        if (step.arrivalStopLocation != null &&
+            step.arrivalStop != null &&
+            step.arrivalStopLocation != step.departureStopLocation) {
+          double hue;
+          String icon;
+          switch (step.transitType?.toLowerCase()) {
+            case 'subway':
+              hue = BitmapDescriptor.hueBlue;
+              icon = '🚇';
+              break;
+            case 'bus':
+              hue = BitmapDescriptor.hueOrange;
+              icon = '🚌';
+              break;
+            default:
+              hue = BitmapDescriptor.hueViolet;
+              icon = '🚌';
+          }
+
+          markers.add(Marker(
+            markerId: MarkerId('arrival_stop_$i'),
+            position: step.arrivalStopLocation!,
+            icon: BitmapDescriptor.defaultMarkerWithHue(hue),
+            infoWindow: InfoWindow(
+              title: '$icon ${step.arrivalStop}',
+              snippet: '${step.transitLine} 하차 • ${step.arrivalTime ?? ""}',
+            ),
+          ));
+        }
+      }
+    }
+
+    print('✅ 생성된 대중교통 마커 수: ${markers.length}개 (출발지/목적지 포함)');
     return markers;
   }
 
-  Set<Polyline> _createPolylines() {
-    final Set<Polyline> polylines = {};
-    final routeProvider = context.read<RouteProvider>();
+  Set<Polyline> _getTransitPolylines() {
+    Set<Polyline> polylines = {};
 
-    routeProvider.routes.asMap().forEach((index, route) {
-      List<LatLng> points = route.segments.expand((segment) => [
-        LatLng(segment.startLat, segment.startLon),
-        LatLng(segment.endLat, segment.endLon),
-      ]).toList();
+    polylines.add(Polyline(
+      polylineId: PolylineId('base_route'),
+      points: widget.route.points,
+      color: Colors.grey.withOpacity(0.6),
+      width: 3,
+    ));
 
-      polylines.add(
-        Polyline(
-          polylineId: PolylineId('route_$index'),
-          points: points,
-          color: RouteProvider.routeColors[index % RouteProvider.routeColors.length],
-          width: 5,
-        ),
-      );
-    });
+    if (!_isTransitMode || _transitSteps.isEmpty || widget.route.points.isEmpty) {
+      polylines.clear();
+      polylines.add(Polyline(
+        polylineId: PolylineId('main_route'),
+        points: widget.route.points,
+        color: _getRouteColor(),
+        width: 6,
+      ));
+      return polylines;
+    }
+
+    final segmentSize = widget.route.points.length ~/ _transitSteps.length;
+
+    for (int i = 0; i < _transitSteps.length; i++) {
+      final step = _transitSteps[i];
+
+      if (step.mode == 'WALKING') {
+        final startIndex = i * segmentSize;
+        final endIndex = (i + 1) * segmentSize;
+
+        if (startIndex < widget.route.points.length) {
+          final segmentEndIndex = endIndex < widget.route.points.length
+              ? endIndex
+              : widget.route.points.length;
+
+          final segmentPoints = widget.route.points.sublist(startIndex, segmentEndIndex);
+
+          if (segmentPoints.isNotEmpty) {
+            polylines.add(Polyline(
+              polylineId: PolylineId('walking_$i'),
+              points: segmentPoints,
+              color: Colors.green,
+              width: 5,
+              patterns: [PatternItem.dot, PatternItem.gap(8)],
+            ));
+          }
+        }
+      }
+    }
 
     return polylines;
   }
 
-  void _fitAllRoutesBounds() {
-    if (_mapController == null) return;
-
-    final routeProvider = context.read<RouteProvider>();
-    if (routeProvider.routes.isEmpty) return;
-
-    double minLat = double.infinity;
-    double maxLat = -double.infinity;
-    double minLng = double.infinity;
-    double maxLng = -double.infinity;
-
-    for (var route in routeProvider.routes) {
-      for (var segment in route.segments) {
-        minLat = min(minLat, segment.startLat);
-        maxLat = max(maxLat, segment.startLat);
-        minLng = min(minLng, segment.startLon);
-        maxLng = max(maxLng, segment.startLon);
-
-        minLat = min(minLat, segment.endLat);
-        maxLat = max(maxLat, segment.endLat);
-        minLng = min(minLng, segment.endLon);
-        maxLng = max(maxLng, segment.endLon);
-      }
-    }
-
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
+  void _showArrivalDialog() {
+    _locationTimer?.cancel();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.celebration, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('목적지 도착!'),
+          ],
         ),
-        50,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('🎉 성공적으로 목적지에 도착했습니다!'),
+            if (_detailedTransitRoute?.totalFare.isNotEmpty == true) ...[
+              SizedBox(height: 8),
+              Text('💰 총 교통비: ${_detailedTransitRoute!.totalFare}'),
+            ],
+            if (_transitSteps.isNotEmpty) ...[
+              SizedBox(height: 8),
+              Text('🚌 이용한 교통수단: ${_transitSteps.where((s) => s.mode == 'TRANSIT').length}개'),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).pop();
+            },
+            child: Text('확인'),
+          ),
+        ],
       ),
     );
   }
-  Future<void> _initializeNavigation() async {
-    if (!_isMapReady) return;
-    if (_isNavigationInitialized) return;
 
-    try {
-      final locationProvider = context.read<LocationProvider>();
-      await locationProvider.startTracking();
+  void _showDetailedSteps() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.8,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
 
-      final navigationProvider = context.read<NavigationProvider>();
-      await navigationProvider.startNavigation(widget.startLocation);
+            Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                '상세 경로 안내',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
 
-      setState(() {
-        _isNavigationInitialized = true;
-      });
+            Expanded(
+              child: ListView.builder(
+                itemCount: _transitSteps.length,
+                itemBuilder: (context, index) {
+                  final step = _transitSteps[index];
+                  final isCurrentStep = index == _currentStepIndex;
 
-      _moveCameraToLocation(widget.startLocation);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('내비게이션 시작 실패: $e')),
-        );
-      }
-    }
+                  return Container(
+                    margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isCurrentStep ? Colors.blue.withOpacity(0.1) : null,
+                      borderRadius: BorderRadius.circular(8),
+                      border: isCurrentStep
+                          ? Border.all(color: Colors.blue, width: 2)
+                          : null,
+                    ),
+                    child: ListTile(
+                      leading: Container(
+                        padding: EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _getStepColor(index, step),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _getStepIcon(step),
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                      title: Text(step.instruction),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${step.duration}'),
+                          if (step.transitLine != null)
+                            Text('${step.transitLine}'),
+                          if (step.departureStop != null && step.arrivalStop != null)
+                            Text('${step.departureStop} → ${step.arrivalStop}'),
+                        ],
+                      ),
+                      trailing: isCurrentStep
+                          ? Icon(Icons.location_on, color: Colors.blue)
+                          : null,
+                      onTap: () {
+                        setState(() {
+                          _currentStepIndex = index;
+                        });
+                        Navigator.pop(context);
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  void _moveCameraToLocation(LatLng location) {
-    if (_mapController == null || !_isMapReady) return;
+  Widget _buildCurrentStepCard() {
+    if (!_isTransitMode ||
+        _transitSteps.isEmpty ||
+        _currentStepIndex >= _transitSteps.length) {
+      return SizedBox.shrink();
+    }
 
-    _mapController!.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(
-          target: location,
-          zoom: 17,
-          tilt: 45,
-          bearing: 0,
+    final currentStep = _transitSteps[_currentStepIndex];
+
+    return Card(
+      elevation: 8,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _getStepColor(_currentStepIndex, currentStep),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _getStepIcon(currentStep),
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${_currentStepIndex + 1}단계 / ${_transitSteps.length}단계',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      Text(
+                        currentStep.instruction,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            if (currentStep.mode == 'TRANSIT') ...[
+              SizedBox(height: 12),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    if (currentStep.transitLine != null)
+                      Row(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _getStepColor(_currentStepIndex, currentStep),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              currentStep.transitLine!,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          Spacer(),
+                          Text(
+                            currentStep.duration,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                    if (currentStep.departureStop != null && currentStep.arrivalStop != null) ...[
+                      SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.radio_button_checked, size: 12, color: Colors.green),
+                          SizedBox(width: 6),
+                          Expanded(child: Text(currentStep.departureStop!, style: TextStyle(fontSize: 12))),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.radio_button_unchecked, size: 12, color: Colors.red),
+                          SizedBox(width: 6),
+                          Expanded(child: Text(currentStep.arrivalStop!, style: TextStyle(fontSize: 12))),
+                        ],
+                      ),
+                    ],
+
+                    if (currentStep.departureTime != null) ...[
+                      SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.access_time, size: 16, color: Colors.blue),
+                          SizedBox(width: 4),
+                          Text(
+                            '출발: ${currentStep.departureTime}',
+                            style: TextStyle(fontSize: 12, color: Colors.blue),
+                          ),
+                          if (currentStep.arrivalTime != null) ...[
+                            SizedBox(width: 16),
+                            Text(
+                              '도착: ${currentStep.arrivalTime}',
+                              style: TextStyle(fontSize: 12, color: Colors.blue),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomInfoPanel() {
+    return Card(
+      margin: EdgeInsets.all(16),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.route.distance,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        widget.route.duration,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.blue,
+                        ),
+                      ),
+                      if (_detailedTransitRoute?.totalFare.isNotEmpty == true) ...[
+                        SizedBox(height: 4),
+                        Text(
+                          '요금: ${_detailedTransitRoute!.totalFare}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.my_location),
+                      onPressed: _updateCamera,
+                    ),
+                    if (_transitSteps.isNotEmpty) ...[
+                      IconButton(
+                        icon: Icon(Icons.skip_previous),
+                        onPressed: _currentStepIndex > 0 ? () {
+                          setState(() {
+                            _currentStepIndex--;
+                          });
+                        } : null,
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.skip_next),
+                        onPressed: _currentStepIndex < _transitSteps.length - 1 ? () {
+                          setState(() {
+                            _currentStepIndex++;
+                          });
+                        } : null,
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -291,156 +737,77 @@ class _NavigationScreenState extends State<NavigationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('내비게이션'),
+        title: Text('실시간 내비게이션 ${_getTransportModeIcon()}'),
+        backgroundColor: _getRouteColor(),
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: Icon(_isNavigating ? Icons.pause : Icons.play_arrow),
+            onPressed: _isNavigating ? _pauseNavigation : _resumeNavigation,
+          ),
+          if (_isTransitMode && _transitSteps.isNotEmpty)
+            IconButton(
+              icon: Icon(Icons.list),
+              onPressed: _showDetailedSteps,
+            ),
+        ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-          ? Center(child: Text(_errorMessage!))
-          : Stack(
+      body: Stack(
         children: [
           GoogleMap(
             initialCameraPosition: CameraPosition(
-              target: widget.startLocation,
-              zoom: 15,
+              target: widget.origin,
+              zoom: _isTransitMode ? 14 : 17,
+              tilt: _isTransitMode ? 0 : 45,
             ),
             onMapCreated: (controller) {
               _mapController = controller;
-              if (!_isMapInitialized) {
-                _updateMapElements();
-                _isMapInitialized = true;
-              }
+              _updateCurrentLocation();
             },
-            markers: _markers,
-            polylines: _polylines,
             myLocationEnabled: true,
-            myLocationButtonEnabled: true,
-            zoomControlsEnabled: false,
+            myLocationButtonEnabled: false,
+            compassEnabled: true,
+            mapType: MapType.normal,
+            polylines: _isTransitMode ? _getTransitPolylines() : {
+              Polyline(
+                polylineId: PolylineId('navigation_route'),
+                points: widget.route.points,
+                color: _getRouteColor(),
+                width: 6,
+              ),
+            },
+            markers: _isTransitMode ? _getTransitMarkers() : {
+              Marker(
+                markerId: MarkerId('destination'),
+                position: widget.destination,
+                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                infoWindow: InfoWindow(title: '목적지'),
+              ),
+            },
           ),
+
+          if (_isTransitMode && _transitSteps.isNotEmpty)
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: _buildCurrentStepCard(),
+            ),
+
           Positioned(
-            bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '내비게이션 시작됨',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '이동 수단: ${_getTransportModeText(widget.transportMode)}',
-                    style: TextStyle(
-                      color: _getTransportModeColor(widget.transportMode),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                          ),
-                          child: const Text('내비게이션 종료'),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _fitMapToBounds,
-                          child: const Text('전체 경로 보기'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            bottom: 0,
+            child: _buildBottomInfoPanel(),
           ),
         ],
       ),
     );
   }
 
-  String _getTransportModeText(String transportMode) {
-    switch (transportMode.toUpperCase()) {
-      case 'WALK':
-        return '도보';
-      case 'TRANSIT':
-        return '대중교통';
-      case 'DRIVING':
-        return '자동차';
-      default:
-        return transportMode;
-    }
-  }
-  void _fitBounds(List<app_route.Route> routes) {  // 타입 수정
-    if (_mapController == null || routes.isEmpty) return;
-
-    double minLat = double.infinity;
-    double maxLat = -double.infinity;
-    double minLng = double.infinity;
-    double maxLng = -double.infinity;
-
-    for (var route in routes) {
-      for (var segment in route.segments) {
-        // 시작점 확인
-        minLat = min(minLat, segment.startLat);
-        maxLat = max(maxLat, segment.startLat);
-        minLng = min(minLng, segment.startLon);
-        maxLng = max(maxLng, segment.startLon);
-
-        // 도착점 확인
-        minLat = min(minLat, segment.endLat);
-        maxLat = max(maxLat, segment.endLat);
-        minLng = min(minLng, segment.endLon);
-        maxLng = max(maxLng, segment.endLon);
-      }
-    }
-
-    // 여백 추가
-    final double padding = 0.01;
-    minLat -= padding;
-    maxLat += padding;
-    minLng -= padding;
-    maxLng += padding;
-
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
-        ),
-        100,  // 패딩 값
-      ),
-    );
-  }
   @override
   void dispose() {
+    _locationTimer?.cancel();
     _mapController?.dispose();
     super.dispose();
   }

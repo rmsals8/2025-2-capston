@@ -7,13 +7,23 @@ import 'package:http/http.dart' as http;
 import 'dart:math' as Math;
 import 'package:flutter_dotenv/flutter_dotenv.dart' ;
 class VisitHistoryService {
+  static String? _cachedToken;  // 이 줄 추가
+  static DateTime? _tokenTime;  // 이 줄 추가
   static const String _storageKey = 'visit_history';
   final Uuid _uuid = const Uuid();
   // final String baseUrl = 'http://10.0.2.2:8080/api/v1/visit-histories';
   static final String baseUrl = "${dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8080/api/v1'}/visit-histories";
   Future<String?> _getToken() async {
+    // 5분간 토큰 캐시
+    if (_cachedToken != null && _tokenTime != null &&
+        DateTime.now().difference(_tokenTime!).inMinutes < 5) {
+      return _cachedToken;
+    }
+
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('access_token');
+    _cachedToken = prefs.getString('access_token');
+    _tokenTime = DateTime.now();
+    return _cachedToken;
   }
   // 페이징 처리된 방문 기록 조회
   Future<Map<String, dynamic>> getVisitHistoriesPaged({

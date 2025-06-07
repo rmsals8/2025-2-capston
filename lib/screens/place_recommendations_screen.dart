@@ -6,7 +6,8 @@ import '../models/visit_history.dart';
 import '../services/place_recommendation_service.dart';
 import '../screens/navigation/navigation_screen.dart';
 import '../services/visit_history_service.dart';
-
+import 'dart:math' as math;
+import '../models/route_info.dart';
 class PlaceRecommendationsScreen extends StatefulWidget {
   final LatLng currentLocation;
   final String title;
@@ -804,15 +805,55 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
   }
 
   void _navigateToPlace(RecommendedPlace place) {
+    // 🔧 NavigationScreen에 맞는 형식으로 RouteInfo 생성
+    final origin = widget.currentLocation;
+    final destination = LatLng(place.latitude, place.longitude);
+
+    // 간단한 RouteInfo 객체 생성 (직선 경로)
+    final routeInfo = RouteInfo(
+      points: [origin, destination], // 출발지 → 목적지 직선 경로
+      distance: '${_calculateDistance(origin, destination).toStringAsFixed(1)} km',
+      duration: '예상 ${(_calculateEstimatedTime(origin, destination)).round()}분',
+      samplePoints: [origin, destination], // 샘플 포인트
+    );
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => NavigationScreen(
-          startLocation: widget.currentLocation,
-          endLocation: LatLng(place.latitude, place.longitude),
-          transportMode: 'DRIVING',
+          route: routeInfo,           // ✅ RouteInfo 객체
+          origin: origin,             // ✅ 출발지 LatLng
+          destination: destination,   // ✅ 도착지 LatLng
+          transportMode: 'driving',   // ✅ 교통수단 (소문자)
+          transitRoute: null,         // ✅ 대중교통 정보 (없음)
         ),
       ),
     );
   }
+
+  double _calculateDistance(LatLng start, LatLng end) {
+    const double earthRadius = 6371; // 지구 반지름 (km)
+
+    final double lat1Rad = start.latitude * (math.pi / 180);
+    final double lat2Rad = end.latitude * (math.pi / 180);
+    final double dLatRad = (end.latitude - start.latitude) * (math.pi / 180);
+    final double dLngRad = (end.longitude - start.longitude) * (math.pi / 180);
+
+    final double a = math.pow(math.sin(dLatRad / 2), 2) +
+        math.cos(lat1Rad) * math.cos(lat2Rad) *
+            math.pow(math.sin(dLngRad / 2), 2);
+
+    final double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+
+    return earthRadius * c;
+  }
+// 🆕 예상 시간 계산 헬퍼 메서드
+  double _calculateEstimatedTime(LatLng start, LatLng end) {
+    final distance = _calculateDistance(start, end);
+
+    // 자동차 기준 평균 속도 40km/h로 계산
+    return (distance / 40) * 60; // 분 단위
+  }
+
+
 }
