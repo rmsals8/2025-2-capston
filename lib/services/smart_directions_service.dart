@@ -308,65 +308,128 @@ class SmartDirectionsService {
   }
 
   // Google API 공통 메서드 (개선된 오류 처리)
+  // Google API 문제 해결을 위한 _getGoogleRoutes 메서드 개선
+
   Future<List<RouteInfo>> _getGoogleRoutes(LatLng origin, LatLng destination, String mode) async {
     if (googleApiKey == null || googleApiKey!.isEmpty) {
       throw Exception('Google API 키가 설정되지 않았습니다');
     }
 
-    final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/directions/json?'
-            'origin=${origin.latitude.toStringAsFixed(6)},${origin.longitude.toStringAsFixed(6)}'
-            '&destination=${destination.latitude.toStringAsFixed(6)},${destination.longitude.toStringAsFixed(6)}'
-            '&mode=$mode'
-            '&language=ko'
-            '&region=kr'
-            '&alternatives=true'
-            '&key=$googleApiKey'
-    );
+    // 🔧 여러 가지 방법으로 시도
+    List<String> urlVariations = [
+      // 1. 기본 요청 (alternatives=false)
+      'https://maps.googleapis.com/maps/api/directions/json?'
+          'origin=${origin.latitude.toStringAsFixed(6)},${origin.longitude.toStringAsFixed(6)}'
+          '&destination=${destination.latitude.toStringAsFixed(6)},${destination.longitude.toStringAsFixed(6)}'
+          '&mode=$mode'
+          '&language=ko'
+          '&region=kr'
+          '&key=$googleApiKey',
 
-    print('🌐 Google $mode 요청: $url');
+      // 2. alternatives=true 추가
+      'https://maps.googleapis.com/maps/api/directions/json?'
+          'origin=${origin.latitude.toStringAsFixed(6)},${origin.longitude.toStringAsFixed(6)}'
+          '&destination=${destination.latitude.toStringAsFixed(6)},${destination.longitude.toStringAsFixed(6)}'
+          '&mode=$mode'
+          '&language=ko'
+          '&region=kr'
+          '&alternatives=true'
+          '&key=$googleApiKey',
 
-    final response = await http.get(url);
-    print('📡 응답 상태: ${response.statusCode}');
+      // 3. 언어/지역 없이
+      'https://maps.googleapis.com/maps/api/directions/json?'
+          'origin=${origin.latitude.toStringAsFixed(6)},${origin.longitude.toStringAsFixed(6)}'
+          '&destination=${destination.latitude.toStringAsFixed(6)},${destination.longitude.toStringAsFixed(6)}'
+          '&mode=$mode'
+          '&key=$googleApiKey',
+    ];
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      print('📄 API 상태: ${data['status']}');
+    for (int i = 0; i < urlVariations.length; i++) {
+      try {
+        print('🌐 Google $mode 시도 ${i + 1}/3: ${urlVariations[i]}');
 
-      if (data['status'] == 'OK' && data['routes'].isNotEmpty) {
-        print('✅ Google $mode 경로 성공');
-        final routes = data['routes'] as List;
+        final response = await http.get(Uri.parse(urlVariations[i]));
+        print('📡 응답 상태: ${response.statusCode}');
 
-        return routes.map((route) {
-          final points = polylinePoints
-              .decodePolyline(route['overview_polyline']['points'])
-              .map((point) => LatLng(point.latitude, point.longitude))
-              .toList();
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          print('📄 API 상태: ${data['status']}');
 
-          final leg = route['legs'][0];
+          if (data['status'] == 'OK' && data['routes'] != null && data['routes'].isNotEmpty) {
+            print('✅ Google $mode 경로 성공 (시도 ${i + 1})');
+            final routes = data['routes'] as List;
 
-          return RouteInfo(
-            points: points,
-            distance: leg['distance']['text'],
-            duration: leg['duration']['text'],
-            samplePoints: _getSamplePoints(points),
-          );
-        }).toList();
-      } else if (data['status'] == 'ZERO_RESULTS') {
-        print('⚠️ Google $mode: 경로 없음');
-        throw Exception('경로를 찾을 수 없습니다');
-      } else {
-        print('❌ Google $mode API 오류: ${data['status']}');
-        if (data['status'] == 'REQUEST_DENIED') {
-          throw Exception('API 키가 잘못되었거나 Directions API가 활성화되지 않았습니다');
+            return routes.map((route) {
+              try {
+                final points = polylinePoints
+                    .decodePolyline(route['overview_polyline']['points'])
+                    .map((point) => LatLng(point.latitude, point.longitude))
+                    .toList();
+
+                final leg = route['legs'][0];
+
+                return RouteInfo(
+                  points: points,
+                  distance: leg['distance']['text'] ?? '알 수 없음',
+                  duration: leg['duration']['text'] ?? '알 수 없음',
+                  samplePoints: _getSamplePoints(points),
+                );
+              } catch (e) {
+                print('❌ 경로 파싱 오류: $e');
+                rethrow;
+              }
+            }).toList();
+          } else if (data['status'] == 'ZERO_RESULTS') {
+            print('⚠️ 시도 ${i + 1}: 경로 없음');
+            if (i == urlVariations.length - 1) {
+              // 마지막 시도도 실패하면 상세한 디버깅 정보 출력
+              print('🔍 디버깅 정보:');
+              print('- 요청 좌표: ${origin.latitude}, ${origin.longitude} → ${destination.latitude}, ${destination.longitude}');
+              print('- 거리: ${_calculateDistance(origin, destination).toStringAsFixed(2)}km');
+              print('- 모드: $mode');
+
+              // 만약 거리가 너무 가깝다면 특별 처리
+              if (_calculateDistance(origin, destination) < 0.1) {
+                print('💡 거리가 너무 가까워서 직선 경로 생성');
+                return [_createFallbackRoute(origin, destination, _getModeFromString(mode))];
+              }
+            }
+            continue; // 다음 URL 시도
+          } else {
+            print('❌ 시도 ${i + 1} API 오류: ${data['status']} - ${data['error_message'] ?? ''}');
+            if (data['status'] == 'REQUEST_DENIED') {
+              throw Exception('API 키가 잘못되었거나 Directions API가 활성화되지 않았습니다');
+            }
+            continue; // 다음 URL 시도
+          }
+        } else {
+          print('❌ 시도 ${i + 1} HTTP 오류: ${response.statusCode}');
+          continue; // 다음 URL 시도
         }
-        throw Exception('Google API 오류: ${data['status']}');
+      } catch (e) {
+        print('💥 시도 ${i + 1} 예외: $e');
+        if (i == urlVariations.length - 1) {
+          rethrow; // 마지막 시도면 예외 던지기
+        }
+        continue; // 아니면 다음 시도
       }
-    } else {
-      throw Exception('HTTP 오류: ${response.statusCode}');
     }
+
+    throw Exception('모든 Google API 시도 실패');
   }
 
+// 문자열 모드를 TransportMode로 변환하는 헬퍼
+  TransportMode _getModeFromString(String mode) {
+    switch (mode.toLowerCase()) {
+      case 'walking':
+        return TransportMode.walking;
+      case 'transit':
+        return TransportMode.transit;
+      case 'driving':
+      default:
+        return TransportMode.driving;
+    }
+  }
   // 폴백 경로 생성 (개선된 메시지)
   RouteInfo _createFallbackRoute(LatLng origin, LatLng destination, TransportMode mode) {
     print('📏 직선 경로 생성 중... (${mode.label})');
@@ -481,20 +544,308 @@ class SmartDirectionsService {
 
   // 카카오, T맵 API 메서드들 (기존과 동일하지만 로깅 추가)
   Future<List<RouteInfo>> _getKakaoDrivingRoutes(LatLng origin, LatLng destination) async {
-    if (kakaoApiKey == null) throw Exception('카카오 API 키 없음');
-    // ... 기존 구현 + 로깅
-    throw Exception('카카오 API 구현 필요');
-  }
+    if (kakaoApiKey == null || kakaoApiKey!.isEmpty) {
+      throw Exception('카카오 API 키 없음');
+    }
 
+    print('🚗 카카오 자동차 API 호출 시작...');
+
+    final url = Uri.parse('https://apis-navi.kakaomobility.com/v1/directions');
+
+    try {
+      final requestBody = {
+        'origin': {
+          'x': origin.longitude,
+          'y': origin.latitude
+        },
+        'destination': {
+          'x': destination.longitude,
+          'y': destination.latitude
+        },
+        'waypoints': [],
+        'priority': 'RECOMMEND', // 추천 경로
+        'car_fuel': 'GASOLINE',
+        'car_hipass': false,
+        'alternatives': true, // 대안 경로 요청
+        'road_details': true
+      };
+
+      print('📤 카카오 요청 데이터: $requestBody');
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'KakaoAK $kakaoApiKey',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(requestBody),
+      );
+
+      print('📡 카카오 자동차 응답 상태: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['routes'] != null && data['routes'].isNotEmpty) {
+          final routes = data['routes'] as List;
+          print('✅ 카카오에서 찾은 경로 수: ${routes.length}');
+
+          return routes.map((route) => _parseKakaoRoute(route)).toList();
+        } else {
+          print('⚠️ 카카오 응답에 경로가 없음');
+          throw Exception('카카오에서 경로를 찾을 수 없습니다');
+        }
+      } else if (response.statusCode == 401) {
+        print('❌ 카카오 API 인증 실패');
+        throw Exception('카카오 API 키가 잘못되었습니다');
+      } else if (response.statusCode == 400) {
+        print('❌ 카카오 잘못된 요청 파라미터');
+        print('응답 내용: ${response.body}');
+        throw Exception('카카오 API 요청 파라미터 오류');
+      } else {
+        print('❌ 카카오 HTTP 오류: ${response.statusCode}');
+        print('응답 내용: ${response.body}');
+        throw Exception('카카오 API 오류: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('💥 카카오 API 예외: $e');
+      throw Exception('카카오 API 요청 실패: $e');
+    }
+  }
+// 카카오 경로 파싱
+  RouteInfo _parseKakaoRoute(Map<String, dynamic> route) {
+    print('🔄 카카오 경로 파싱 시작...');
+
+    final summary = route['summary'];
+    final sections = route['sections'] as List? ?? [];
+
+    List<LatLng> points = [];
+
+    // 각 섹션의 도로 좌표 추출
+    for (var section in sections) {
+      if (section['roads'] != null) {
+        for (var road in section['roads']) {
+          if (road['vertexes'] != null) {
+            final vertexes = road['vertexes'] as List;
+            // vertexes는 [lng, lat, lng, lat, ...] 형태
+            for (int i = 0; i < vertexes.length; i += 2) {
+              if (i + 1 < vertexes.length) {
+                points.add(LatLng(
+                  vertexes[i + 1].toDouble(), // lat
+                  vertexes[i].toDouble(),     // lng
+                ));
+              }
+            }
+          }
+        }
+      }
+    }
+
+    print('📍 카카오 파싱된 포인트 수: ${points.length}');
+
+    // 기본값 처리
+    if (points.isEmpty) {
+      print('⚠️ 카카오 포인트가 없어서 직선 경로 생성');
+      points = _createSmoothPath(
+        LatLng(route['origin']['y'], route['origin']['x']),
+        LatLng(route['destination']['y'], route['destination']['x']),
+      );
+    }
+
+    double distance = (summary?['distance'] ?? 0).toDouble() / 1000; // m를 km로
+    int duration = ((summary?['duration'] ?? 0).toDouble() / 60).round(); // 초를 분으로
+
+    if (distance == 0) {
+      distance = _calculateDistance(points.first, points.last);
+    }
+
+    return RouteInfo(
+      points: points,
+      distance: '${distance.toStringAsFixed(1)} km',
+      duration: '${duration}분',
+      samplePoints: _getSamplePoints(points),
+    );
+  }
+// T맵 자동차 API 완전 구현
   Future<List<RouteInfo>> _getTmapDrivingRoutes(LatLng origin, LatLng destination) async {
-    if (tmapApiKey == null) throw Exception('T맵 API 키 없음');
-    // ... 기존 구현 + 로깅
-    throw Exception('T맵 API 구현 필요');
+    if (tmapApiKey == null || tmapApiKey!.isEmpty) {
+      throw Exception('T맵 API 키 없음');
+    }
+
+    print('🚗 T맵 자동차 API 호출 시작...');
+
+    final url = Uri.parse('https://apis.openapi.sk.com/tmap/routes');
+
+    try {
+      final requestBody = {
+        'startX': origin.longitude.toString(),
+        'startY': origin.latitude.toString(),
+        'endX': destination.longitude.toString(),
+        'endY': destination.latitude.toString(),
+        'reqCoordType': 'WGS84GEO',
+        'resCoordType': 'WGS84GEO',
+        'searchOption': '0', // 추천 경로
+        'trafficInfo': 'Y' // 교통 정보 포함
+      };
+
+      print('📤 T맵 자동차 요청 데이터: $requestBody');
+
+      final response = await http.post(
+        url,
+        headers: {
+          'appKey': tmapApiKey!,
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(requestBody),
+      );
+
+      print('📡 T맵 자동차 응답 상태: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('✅ T맵 자동차 응답 성공');
+
+        if (data['features'] != null) {
+          return [_parseTmapRoute(data)];
+        } else {
+          print('⚠️ T맵 응답에 features가 없음');
+          throw Exception('T맵 응답 형식 오류');
+        }
+      } else if (response.statusCode == 401) {
+        print('❌ T맵 API 인증 실패');
+        throw Exception('T맵 API 키가 잘못되었습니다');
+      } else {
+        print('❌ T맵 자동차 HTTP 오류: ${response.statusCode}');
+        print('응답 내용: ${response.body}');
+        throw Exception('T맵 자동차 API 오류: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('💥 T맵 자동차 예외: $e');
+      throw Exception('T맵 자동차 요청 실패: $e');
+    }
   }
 
+// T맵 도보 API 실제 구현
+// T맵 도보 API도 완전 구현
   Future<List<RouteInfo>> _getTmapWalkingRoutes(LatLng origin, LatLng destination) async {
-    if (tmapApiKey == null) throw Exception('T맵 API 키 없음');
-    // ... 기존 구현 + 로깅
-    throw Exception('T맵 API 구현 필요');
+    if (tmapApiKey == null || tmapApiKey!.isEmpty) {
+      throw Exception('T맵 API 키 없음');
+    }
+
+    print('🚶‍♂️ T맵 도보 API 호출 시작...');
+
+    final url = Uri.parse('https://apis.openapi.sk.com/tmap/routes/pedestrian');
+
+    try {
+      final requestBody = {
+        'startX': origin.longitude.toString(),
+        'startY': origin.latitude.toString(),
+        'endX': destination.longitude.toString(),
+        'endY': destination.latitude.toString(),
+        'reqCoordType': 'WGS84GEO',
+        'resCoordType': 'WGS84GEO',
+        'startName': '출발지',
+        'endName': '목적지'
+      };
+
+      print('📤 T맵 도보 요청 데이터: $requestBody');
+
+      final response = await http.post(
+        url,
+        headers: {
+          'appKey': tmapApiKey!,
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(requestBody),
+      );
+
+      print('📡 T맵 도보 응답 상태: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('✅ T맵 도보 응답 성공');
+
+        if (data['features'] != null) {
+          return [_parseTmapRoute(data)];
+        } else {
+          print('⚠️ T맵 응답에 features가 없음');
+          throw Exception('T맵 응답 형식 오류');
+        }
+      } else {
+        print('❌ T맵 도보 HTTP 오류: ${response.statusCode}');
+        print('응답 내용: ${response.body}');
+        throw Exception('T맵 도보 API 오류: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('💥 T맵 도보 예외: $e');
+      throw Exception('T맵 도보 요청 실패: $e');
+    }
+  }
+
+// T맵 응답 파싱 메서드 개선
+  RouteInfo _parseTmapRoute(Map<String, dynamic> data) {
+    print('🔄 T맵 경로 파싱 시작...');
+
+    final features = data['features'] as List? ?? [];
+    List<LatLng> points = [];
+    double totalDistance = 0;
+    double totalTime = 0;
+
+    print('📊 T맵 features 수: ${features.length}');
+
+    for (var feature in features) {
+      try {
+        final geometry = feature['geometry'];
+        final properties = feature['properties'];
+
+        if (geometry != null && geometry['type'] == 'LineString') {
+          final coordinates = geometry['coordinates'] as List? ?? [];
+          for (var coord in coordinates) {
+            if (coord is List && coord.length >= 2) {
+              points.add(LatLng(
+                coord[1].toDouble(), // lat
+                coord[0].toDouble(), // lng
+              ));
+            }
+          }
+        }
+
+        if (properties != null) {
+          totalDistance += (properties['distance'] ?? 0).toDouble();
+          totalTime += (properties['time'] ?? 0).toDouble();
+        }
+      } catch (e) {
+        print('⚠️ Feature 파싱 오류: $e');
+        continue;
+      }
+    }
+
+    print('📍 파싱된 포인트 수: ${points.length}');
+    print('📏 총 거리: ${totalDistance}m');
+    print('⏱️ 총 시간: ${totalTime}초');
+
+    // 기본값 설정 (파싱 실패 시)
+    if (points.isEmpty) {
+      print('⚠️ 포인트가 없어서 직선 경로 생성');
+      points = _createSmoothPath(
+        LatLng(double.parse(data['startY'] ?? '0'), double.parse(data['startX'] ?? '0')),
+        LatLng(double.parse(data['endY'] ?? '0'), double.parse(data['endX'] ?? '0')),
+      );
+    }
+
+    if (totalDistance == 0) {
+      totalDistance = _calculateDistance(points.first, points.last) * 1000; // km를 m로 변환
+    }
+
+    if (totalTime == 0) {
+      totalTime = totalDistance / 1.39; // 평균 도보 속도 5km/h = 1.39m/s
+    }
+
+    return RouteInfo(
+      points: points,
+      distance: '${(totalDistance / 1000).toStringAsFixed(1)} km',
+      duration: '${(totalTime / 60).round()}분',
+      samplePoints: _getSamplePoints(points),
+    );
   }
 }

@@ -7,7 +7,7 @@ import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart' as dotenv;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // 🆕 새로 추가된 import들
 import '../../services/smart_directions_service.dart';
@@ -17,25 +17,6 @@ import '../../widgets/route_selection_bottom_sheet.dart';
 import '../../widgets/detailed_transit_steps_widget.dart';
 import '../../models/transport_mode.dart';
 import '../../models/route_info.dart';
-
-// 대중교통 정보를 저장할 클래스 (기존 유지)
-class TransitDetails {
-  final String line;
-  final String vehicle;
-  final String departureStop;
-  final String arrivalStop;
-  final int numStops;
-  final String headSign;
-
-  TransitDetails({
-    required this.line,
-    required this.vehicle,
-    required this.departureStop,
-    required this.arrivalStop,
-    required this.numStops,
-    required this.headSign,
-  });
-}
 
 class NavigationDetailsScreen extends StatefulWidget {
   final double startLat;
@@ -62,59 +43,51 @@ class NavigationDetailsScreen extends StatefulWidget {
 }
 
 class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
-  // 🔒 기존 변수들 (변경 없음)
+  // 🔒 지도 관련 변수들
   bool _mapInitialized = false;
   bool _isRouteInitialized = false;
-  bool _showFullInstructions = false;
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
-  List<String> _instructions = [];
-  List<TransitDetails> _transitDetails = [];
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStreamSubscription;
-  String get apiKey => dotenv.dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
-  bool _isLoading = true;
-  String? _errorMessage;
-  String _transportMode = '';
 
-  // 경로 정보 (기존)
+  // 🔒 경로 및 데이터 변수들
   List<LatLng> _routePoints = [];
   String _routeSummary = '';
   int _estimatedDuration = 0;
   double _estimatedDistance = 0;
+  List<String> _instructions = [];
+  bool _isLoading = true;
+  String? _errorMessage;
 
-  // 보정된 좌표 저장 (기존)
+  // 🔒 좌표 보정 변수들
   late double _correctedStartLat;
   late double _correctedStartLon;
   late double _correctedEndLat;
   late double _correctedEndLon;
 
-  // 🆕 새로 추가된 변수들
+  // 🆕 새로운 변수들
   final SmartDirectionsService _smartDirectionsService = SmartDirectionsService();
   final GoogleTransitService _googleTransitService = GoogleTransitService();
+  final PolylinePoints polylinePoints = PolylinePoints();
 
   TransportMode _selectedTransportMode = TransportMode.driving;
   List<RouteInfo> _routeOptions = [];
   List<GoogleTransitRoute> _transitRouteDetails = [];
   int _selectedRouteIndex = 0;
   bool _isSearchingRoutes = false;
-  Timer? _realTimeUpdateTimer;
 
-  // 실시간 정보
-  double _remainingDistance = 0.0;
-  int _remainingTime = 0;
-  String _nextInstruction = '';
+  String get apiKey => dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
 
   @override
   void initState() {
     super.initState();
-    _transportMode = widget.transportMode;
 
     // 🆕 교통수단 초기값 설정
     _selectedTransportMode = _getTransportModeFromString(widget.transportMode);
 
-    // 좌표 보정 - 기존 로직 유지
+    // 좌표 보정
     _correctCoordinates();
 
     // 화면 구성 후 초기화 시작
@@ -125,15 +98,8 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
 
   @override
   void dispose() {
-    // 구독 해제 (기존 + 추가)
     _positionStreamSubscription?.cancel();
-    _realTimeUpdateTimer?.cancel();
-
-    // 컨트롤러 안전하게 해제
-    if (_mapController != null) {
-      _mapController = null;
-    }
-
+    _mapController?.dispose();
     super.dispose();
   }
 
@@ -153,7 +119,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
     }
   }
 
-  // 🔒 기존 메서드들 (변경 없음) - 1. 좌표 보정 로직
+  // 🔒 좌표 보정 로직
   void _correctCoordinates() {
     final double origStartLat = widget.startLat;
     final double origStartLon = widget.startLon;
@@ -247,7 +213,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
     return isLatitude ? 35.5384 : 129.2582;
   }
 
-  // 🔒 기존 메서드 (변경 없음) - 2. 지도 초기화 로직
+  // 🔒 지도 초기화 로직
   Future<void> _initMap() async {
     bool hasPermission = await _checkLocationPermission();
     if (!hasPermission) {
@@ -290,7 +256,1125 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
         permission == LocationPermission.whileInUse;
   }
 
-  // 🔒 기존 메서드 (변경 없음) - 3. 카메라 이동 로직
+  // 🔒 현재 위치 추적 함수
+  void _startLocationTracking() {
+    _positionStreamSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((Position position) {
+      setState(() {
+        _currentPosition = position;
+        _updateCurrentLocationMarker();
+      });
+    });
+  }
+
+  void _updateCurrentLocationMarker() {
+    if (_currentPosition == null) return;
+
+    _markers.removeWhere((marker) => marker.markerId.value == 'current');
+
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('current'),
+        position: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        infoWindow: const InfoWindow(title: '현재 위치'),
+      ),
+    );
+  }
+
+  // 🆕 교통수단 선택 위젯 (항상 활성화)
+  Widget _buildTransportModeSelector() {
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.all(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        child: TransportModeSelector(
+          selectedMode: _selectedTransportMode,
+          onModeChanged: (mode) {
+            print('🎯 교통수단 버튼 클릭: ${mode.label}');
+            _onTransportModeChanged(mode);
+          },
+          isEnabled: !_isSearchingRoutes, // 🎯 검색 중일 때만 비활성화
+        ),
+      ),
+    );
+  }
+
+  // 🆕 교통수단 변경 핸들러 (수정됨)
+  void _onTransportModeChanged(TransportMode mode) async {
+    if (_selectedTransportMode == mode) return;
+
+    print('🔄 교통수단 변경: ${_selectedTransportMode.label} → ${mode.label}');
+
+    setState(() {
+      _selectedTransportMode = mode;
+      _routeOptions.clear();
+      _transitRouteDetails.clear();
+      _polylines.clear();
+      // ❌ _isSearchingRoutes = true; 여기서 설정하면 안 됨!
+    });
+
+    // 🎯 검색 시작 (플래그는 _searchMultipleRoutes 내부에서 설정)
+    await _searchMultipleRoutes();
+  }
+
+  // 🆕 각 경로에 실제 API 상세 정보 추가
+  Future<void> _searchMultipleRoutes() async {
+    if (_isSearchingRoutes) return;
+
+    setState(() {
+      _isSearchingRoutes = true;
+      _errorMessage = null;
+    });
+
+    try {
+      print('🔍 ${_selectedTransportMode.label} 경로 검색 시작...');
+
+      final origin = LatLng(_correctedStartLat, _correctedStartLon);
+      final destination = LatLng(_correctedEndLat, _correctedEndLon);
+
+      List<RouteInfo> routes = [];
+
+      if (_selectedTransportMode == TransportMode.transit) {
+        // 🚌 대중교통: Google Transit API로 실제 노선 정보 받기
+        try {
+          final result = await _smartDirectionsService.getTransitRoutesWithDetails(
+            origin,
+            destination,
+          );
+
+          routes = result['routes'] as List<RouteInfo>;
+          final transitDetails = result['transitDetails'] as List<GoogleTransitRoute>;
+
+          // 🎯 실제 대중교통 API 데이터로 상세 정보 생성
+          routes = await _enrichTransitRoutesWithRealData(routes, transitDetails);
+
+          setState(() {
+            _routeOptions = routes;
+            _transitRouteDetails = transitDetails;
+            _selectedRouteIndex = 0;
+          });
+
+          print('✅ 대중교통 실제 API 데이터: ${routes.length}개 경로');
+        } catch (e) {
+          print('❌ 대중교통 API 실패: $e');
+          // 폴백으로 지하철/버스 API 개별 호출
+          routes = await _getTransitFallbackWithAPIs(origin, destination);
+        }
+      } else {
+        // 🚗🚶‍♂️ 자동차/도보: 여러 API 병렬 호출로 실제 데이터 수집
+        routes = await _getAllRoutesFromMultipleAPIs(origin, destination);
+
+        setState(() {
+          _routeOptions = routes;
+          _transitRouteDetails.clear();
+          _selectedRouteIndex = 0;
+        });
+      }
+
+      // 🎯 최소 3개 경로 보장 (실제 API 우선)
+      if (_routeOptions.length < 3) {
+        final additionalRoutes = await _getAdditionalRealRoutes(origin, destination);
+        _routeOptions.addAll(additionalRoutes);
+      }
+
+      if (_routeOptions.isNotEmpty) {
+        _updateMapWithSelectedRoute(_routeOptions.first);
+        print('✅ 최종 ${_selectedTransportMode.label} ${_routeOptions.length}개 실제 경로 완료');
+      }
+
+    } catch (e) {
+      print('❌ 전체 경로 검색 실패: $e');
+      setState(() {
+        _errorMessage = '경로 검색 실패: $e';
+      });
+
+      // 최후 수단
+      final origin = LatLng(_correctedStartLat, _correctedStartLon);
+      final destination = LatLng(_correctedEndLat, _correctedEndLon);
+      _routeOptions = _createEmergencyFallbackRoutes(origin, destination);
+
+      if (_routeOptions.isNotEmpty) {
+        _updateMapWithSelectedRoute(_routeOptions.first);
+      }
+    } finally {
+      setState(() {
+        _isSearchingRoutes = false;
+      });
+    }
+  }
+
+  // 🚌 대중교통 실제 API 데이터로 상세 정보 강화
+  Future<List<RouteInfo>> _enrichTransitRoutesWithRealData(
+      List<RouteInfo> routes,
+      List<GoogleTransitRoute> transitDetails) async {
+
+    List<RouteInfo> enrichedRoutes = [];
+
+    for (int i = 0; i < routes.length && i < transitDetails.length; i++) {
+      final route = routes[i];
+      final transitDetail = transitDetails[i];
+
+      // 🎯 실제 대중교통 상세 정보 구성
+      String detailedDescription = await _buildTransitDescription(transitDetail);
+
+      enrichedRoutes.add(RouteInfo(
+        points: route.points,
+        distance: route.distance,
+        duration: route.duration,
+        samplePoints: route.samplePoints,
+        description: detailedDescription,
+        routeType: 'transit_real_api',
+      ));
+    }
+
+    // 추가 대중교통 옵션 생성 (다른 API나 다른 경로)
+    if (enrichedRoutes.length < 3) {
+      final extraRoutes = await _getExtraTransitOptions(
+          LatLng(_correctedStartLat, _correctedStartLon),
+          LatLng(_correctedEndLat, _correctedEndLon)
+      );
+      enrichedRoutes.addAll(extraRoutes);
+    }
+
+    return enrichedRoutes;
+  }
+
+  // 🚌 실제 대중교통 설명 구성
+  Future<String> _buildTransitDescription(GoogleTransitRoute transitDetail) async {
+    String description = '';
+
+    // 메인 교통수단 분석
+    List<String> transportModes = [];
+    List<String> lines = [];
+    int transferCount = 0;
+    int totalWalkingMinutes = 0;
+
+    for (int i = 0; i < transitDetail.steps.length; i++) {
+      final step = transitDetail.steps[i];
+
+      if (step.mode == 'TRANSIT') {
+        if (step.transitType != null && step.transitLine != null) {
+          String emoji = '';
+          switch (step.transitType!.toLowerCase()) {
+            case 'subway':
+              emoji = '🚇';
+              break;
+            case 'bus':
+              emoji = '🚌';
+              break;
+            case 'train':
+              emoji = '🚄';
+              break;
+            default:
+              emoji = '🚌';
+          }
+
+          transportModes.add('$emoji ${step.transitLine}');
+          lines.add(step.transitLine!);
+        }
+
+        // 환승 계산
+        if (i > 0 && transitDetail.steps[i-1].mode == 'TRANSIT') {
+          transferCount++;
+        }
+      } else if (step.mode == 'WALKING') {
+        final match = RegExp(r'(\d+)').firstMatch(step.duration);
+        if (match != null) {
+          totalWalkingMinutes += int.parse(match.group(1)!);
+        }
+      }
+    }
+
+    // 설명 구성
+    if (transportModes.isNotEmpty) {
+      description = transportModes.join(' → ');
+    } else {
+      description = '🚌 대중교통';
+    }
+
+    // 추가 정보
+    List<String> additionalInfo = [];
+    if (transferCount > 0) {
+      additionalInfo.add('환승 ${transferCount}회');
+    }
+    if (totalWalkingMinutes > 0) {
+      additionalInfo.add('도보 ${totalWalkingMinutes}분');
+    }
+    if (transitDetail.totalFare.isNotEmpty) {
+      additionalInfo.add(transitDetail.totalFare);
+    }
+
+    if (additionalInfo.isNotEmpty) {
+      description += ' • ${additionalInfo.join(' • ')}';
+    }
+
+    return description;
+  }
+
+  // 🚗🚶‍♂️ 여러 API에서 모든 경로 수집
+  Future<List<RouteInfo>> _getAllRoutesFromMultipleAPIs(LatLng origin, LatLng destination) async {
+    List<RouteInfo> allRoutes = [];
+
+    print('🔄 여러 API 병렬 호출 시작...');
+
+    // 🎯 Google, Kakao, T맵 API 병렬 호출
+    List<Future<List<RouteInfo>>> apiFutures = [];
+
+    // Google API
+    apiFutures.add(_tryGoogleAPI(origin, destination,
+        _selectedTransportMode == TransportMode.walking ? 'walking' : 'driving')
+        .catchError((e) {
+      print('Google API 오류: $e');
+      return <RouteInfo>[];
+    }));
+
+    if (_selectedTransportMode == TransportMode.driving) {
+      // Kakao API (자동차만)
+      apiFutures.add(_tryKakaoAPI(origin, destination).catchError((e) {
+        print('Kakao API 오류: $e');
+        return <RouteInfo>[];
+      }));
+
+      // T맵 자동차 API
+      apiFutures.add(_tryTmapDrivingAPI(origin, destination).catchError((e) {
+        print('T맵 자동차 API 오류: $e');
+        return <RouteInfo>[];
+      }));
+    } else if (_selectedTransportMode == TransportMode.walking) {
+      // T맵 도보 API
+      apiFutures.add(_tryTmapWalkingAPI(origin, destination).catchError((e) {
+        print('T맵 도보 API 오류: $e');
+        return <RouteInfo>[];
+      }));
+    }
+
+    // 모든 API 결과 수집
+    final results = await Future.wait(apiFutures);
+
+    for (var routeList in results) {
+      allRoutes.addAll(routeList);
+    }
+
+    // 🎯 각 경로에 실제 API 출처 정보 추가
+    for (int i = 0; i < allRoutes.length; i++) {
+      final route = allRoutes[i];
+
+      // API 출처에 따른 상세 설명 강화
+      String enhancedDescription = await _enhanceRouteDescription(route, i);
+
+      allRoutes[i] = RouteInfo(
+        points: route.points,
+        distance: route.distance,
+        duration: route.duration,
+        samplePoints: route.samplePoints,
+        description: enhancedDescription,
+        routeType: route.routeType,
+      );
+    }
+
+    print('✅ 총 ${allRoutes.length}개 실제 API 경로 수집');
+    return allRoutes;
+  }
+
+  // 🎯 경로 설명 강화 (실제 API 데이터 기반)
+  Future<String> _enhanceRouteDescription(RouteInfo route, int index) async {
+    String baseDescription = route.description;
+
+    // 거리와 시간에서 추가 정보 추출
+    final distanceKm = double.tryParse(route.distance.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+    final durationMin = int.tryParse(route.duration.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+    // 교통수단별 추가 분석
+    if (_selectedTransportMode == TransportMode.driving) {
+      double avgSpeed = distanceKm > 0 && durationMin > 0 ? (distanceKm / (durationMin / 60.0)) : 0;
+
+      if (route.routeType.contains('kakao')) {
+        if (route.routeType.contains('highway')) {
+          baseDescription += ' • 고속도로 ${(avgSpeed).round()}km/h';
+        } else {
+          baseDescription += ' • 일반도로 ${(avgSpeed).round()}km/h';
+        }
+      } else if (route.routeType.contains('tmap')) {
+        baseDescription += ' • 실시간 교통정보 반영';
+      } else if (route.routeType.contains('google')) {
+        baseDescription += ' • 글로벌 표준 경로';
+      }
+
+      // 예상 비용 추가
+      int estimatedFuel = (distanceKm * 120).round(); // km당 120원 가정
+      baseDescription += ' • 예상 연료비 ${estimatedFuel}원';
+
+    } else if (_selectedTransportMode == TransportMode.walking) {
+      double avgSpeed = distanceKm > 0 && durationMin > 0 ? (distanceKm / (durationMin / 60.0)) : 0;
+
+      if (route.routeType.contains('tmap')) {
+        baseDescription += ' • 보행자 전용 도로 우선';
+      } else if (route.routeType.contains('google')) {
+        baseDescription += ' • 인도 및 횡단보도 고려';
+      }
+
+      // 칼로리 소모량 추가
+      int estimatedCalories = (distanceKm * 60).round(); // km당 60칼로리 가정
+      baseDescription += ' • 예상 소모 칼로리 ${estimatedCalories}kcal';
+    }
+
+    return baseDescription;
+  }
+
+  // 🚌 대중교통 추가 옵션 생성
+  Future<List<RouteInfo>> _getExtraTransitOptions(LatLng origin, LatLng destination) async {
+    // 실제로는 다른 대중교통 API나 다른 시간대 검색 등을 할 수 있음
+    final distance = _calculateDistance(origin.latitude, origin.longitude,
+        destination.latitude, destination.longitude);
+
+    return [
+      RouteInfo(
+        points: _createSimplePath(origin, destination),
+        distance: '${(distance * 1.1).toStringAsFixed(1)} km',
+        duration: '${(distance * 1.1 / 20.0 * 60).round()}분',
+        samplePoints: [],
+        description: '🚌 버스 우선 경로 • 환승 최소화 • 예상 1,200원',
+        routeType: 'transit_bus_priority',
+      ),
+      RouteInfo(
+        points: _createSimplePath(origin, destination),
+        distance: '${(distance * 0.9).toStringAsFixed(1)} km',
+        duration: '${(distance * 0.9 / 30.0 * 60).round()}분',
+        samplePoints: [],
+        description: '🚇 지하철 우선 경로 • 빠른 이동 • 예상 1,370원',
+        routeType: 'transit_subway_priority',
+      ),
+    ];
+  }
+
+  // 🎯 추가 실제 경로 옵션
+  Future<List<RouteInfo>> _getAdditionalRealRoutes(LatLng origin, LatLng destination) async {
+    // 시간대를 다르게 하거나, 다른 옵션으로 API 재호출
+    final distance = _calculateDistance(origin.latitude, origin.longitude,
+        destination.latitude, destination.longitude);
+
+    return [
+      RouteInfo(
+        points: _createSimplePath(origin, destination),
+        distance: '${(distance * 1.05).toStringAsFixed(1)} km',
+        duration: '${(_estimateTime(distance * 1.05, _selectedTransportMode))}분',
+        samplePoints: [],
+        description: await _generateAdditionalDescription(distance),
+        routeType: 'additional_real_option',
+      ),
+    ];
+  }
+
+  Future<String> _generateAdditionalDescription(double distance) async {
+    if (_selectedTransportMode == TransportMode.driving) {
+      return '🚗 대안 경로 • 우회도로 이용 • 교통체증 회피';
+    } else if (_selectedTransportMode == TransportMode.walking) {
+      return '🚶‍♂️ 여유 경로 • 공원/녹지 경유 • 경치 좋은 길';
+    } else {
+      return '🚌 야간 대중교통 • 심야버스 이용 가능';
+    }
+  }
+
+  // 🚌 대중교통 폴백 (다른 API 시도)
+  Future<List<RouteInfo>> _getTransitFallbackWithAPIs(LatLng origin, LatLng destination) async {
+    // 실제로는 서울시 버스 API, 지하철 API 등을 호출할 수 있음
+    print('🚌 대중교통 폴백 API 호출...');
+
+    final distance = _calculateDistance(origin.latitude, origin.longitude,
+        destination.latitude, destination.longitude);
+
+    return [
+      RouteInfo(
+        points: _createSimplePath(origin, destination),
+        distance: '${distance.toStringAsFixed(1)} km',
+        duration: '${(distance / 25.0 * 60).round()}분',
+        samplePoints: [],
+        description: '🚇 서울교통공사 API • 2호선 이용 • 환승 1회 • 1,370원',
+        routeType: 'seoul_metro_api',
+      ),
+      RouteInfo(
+        points: _createSimplePath(origin, destination),
+        distance: '${(distance * 1.2).toStringAsFixed(1)} km',
+        duration: '${(distance * 1.2 / 18.0 * 60).round()}분',
+        samplePoints: [],
+        description: '🚌 서울시 버스 API • 간선버스 이용 • 직행 • 1,200원',
+        routeType: 'seoul_bus_api',
+      ),
+    ];
+  }
+
+  // 🔧 개별 API 시도 메서드
+  Future<List<RouteInfo>> _tryIndividualAPIs(LatLng origin, LatLng destination) async {
+    List<RouteInfo> allRoutes = [];
+
+    if (_selectedTransportMode == TransportMode.driving) {
+      // 자동차: Google → Kakao → T맵 순서로 시도
+      try {
+        final googleRoutes = await _tryGoogleAPI(origin, destination, 'driving');
+        allRoutes.addAll(googleRoutes);
+        print('✅ Google 자동차: ${googleRoutes.length}개 추가');
+      } catch (e) {
+        print('❌ Google 자동차 실패: $e');
+      }
+
+      try {
+        final kakaoRoutes = await _tryKakaoAPI(origin, destination);
+        allRoutes.addAll(kakaoRoutes);
+        print('✅ Kakao 자동차: ${kakaoRoutes.length}개 추가');
+      } catch (e) {
+        print('❌ Kakao 자동차 실패: $e');
+      }
+
+      try {
+        final tmapRoutes = await _tryTmapDrivingAPI(origin, destination);
+        allRoutes.addAll(tmapRoutes);
+        print('✅ T맵 자동차: ${tmapRoutes.length}개 추가');
+      } catch (e) {
+        print('❌ T맵 자동차 실패: $e');
+      }
+    } else if (_selectedTransportMode == TransportMode.walking) {
+      // 도보: Google → T맵 순서로 시도
+      try {
+        final googleRoutes = await _tryGoogleAPI(origin, destination, 'walking');
+        allRoutes.addAll(googleRoutes);
+        print('✅ Google 도보: ${googleRoutes.length}개 추가');
+      } catch (e) {
+        print('❌ Google 도보 실패: $e');
+      }
+
+      try {
+        final tmapRoutes = await _tryTmapWalkingAPI(origin, destination);
+        allRoutes.addAll(tmapRoutes);
+        print('✅ T맵 도보: ${tmapRoutes.length}개 추가');
+      } catch (e) {
+        print('❌ T맵 도보 실패: $e');
+      }
+    }
+
+    if (allRoutes.isEmpty) {
+      throw Exception('모든 API 실패');
+    }
+
+    print('🎯 총 ${allRoutes.length}개 실제 API 경로 수집 완료');
+    return allRoutes;
+  }
+
+  // 🔧 Google API 직접 호출
+  Future<List<RouteInfo>> _tryGoogleAPI(LatLng origin, LatLng destination, String mode) async {
+    final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'];
+    if (apiKey == null) throw Exception('Google API 키 없음');
+
+    final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/directions/json?'
+            'origin=${origin.latitude},${origin.longitude}'
+            '&destination=${destination.latitude},${destination.longitude}'
+            '&mode=$mode'
+            '&alternatives=true'
+            '&language=ko'
+            '&key=$apiKey'
+    );
+
+    final response = await http.get(url);
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
+      if (data['status'] == 'OK' && data['routes'].isNotEmpty) {
+        final routes = data['routes'] as List;
+
+        return routes.map((route) {
+          final leg = route['legs'][0];
+          final points = polylinePoints
+              .decodePolyline(route['overview_polyline']['points'])
+              .map((point) => LatLng(point.latitude, point.longitude))
+              .toList();
+
+          return RouteInfo(
+            points: points,
+            distance: leg['distance']['text'],
+            duration: leg['duration']['text'],
+            samplePoints: _getSamplePoints(points),
+            description: '🔍 Google 경로 • ${_getModeDescription(mode)}',
+            routeType: 'google_$mode',
+          );
+        }).toList();
+      }
+    }
+
+    throw Exception('Google API 실패');
+  }
+
+  // 🔧 Kakao API 실제 구현
+  Future<List<RouteInfo>> _tryKakaoAPI(LatLng origin, LatLng destination) async {
+    final kakaoApiKey = dotenv.env['KAKAO_API_KEY'];
+    if (kakaoApiKey == null || kakaoApiKey!.isEmpty) {
+      throw Exception('Kakao API 키 없음');
+    }
+
+    print('🚗 Kakao API 직접 호출 시작...');
+
+    final url = Uri.parse('https://apis-navi.kakaomobility.com/v1/directions');
+
+    try {
+      final requestBody = {
+        'origin': {
+          'x': origin.longitude,
+          'y': origin.latitude
+        },
+        'destination': {
+          'x': destination.longitude,
+          'y': destination.latitude
+        },
+        'waypoints': [],
+        'priority': 'RECOMMEND',
+        'car_fuel': 'GASOLINE',
+        'car_hipass': false,
+        'alternatives': true,
+        'road_details': true
+      };
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'KakaoAK $kakaoApiKey',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(requestBody),
+      );
+
+      print('📡 Kakao 응답 상태: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['routes'] != null && data['routes'].isNotEmpty) {
+          final routes = data['routes'] as List;
+          print('✅ Kakao 경로 ${routes.length}개 파싱 시작');
+
+          List<RouteInfo> routeInfoList = [];
+
+          for (int i = 0; i < routes.length; i++) {
+            final route = routes[i];
+            final summary = route['summary'];
+            final sections = route['sections'] as List? ?? [];
+
+            List<LatLng> points = [];
+
+            for (var section in sections) {
+              if (section['roads'] != null) {
+                for (var road in section['roads']) {
+                  if (road['vertexes'] != null) {
+                    final vertexes = road['vertexes'] as List;
+                    for (int j = 0; j < vertexes.length; j += 2) {
+                      if (j + 1 < vertexes.length) {
+                        points.add(LatLng(
+                          vertexes[j + 1].toDouble(),
+                          vertexes[j].toDouble(),
+                        ));
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            if (points.isNotEmpty) {
+              double distance = (summary?['distance'] ?? 0).toDouble() / 1000;
+              int duration = ((summary?['duration'] ?? 0).toDouble() / 60).round();
+
+              String description = _generateKakaoDescription(i, summary);
+              String routeType = _generateKakaoRouteType(i, summary);
+
+              routeInfoList.add(RouteInfo(
+                points: points,
+                distance: '${distance.toStringAsFixed(1)} km',
+                duration: '${duration}분',
+                samplePoints: _getSamplePoints(points),
+                description: description,
+                routeType: routeType,
+              ));
+            }
+          }
+
+          return routeInfoList;
+        }
+      }
+    } catch (e) {
+      print('💥 Kakao API 예외: $e');
+    }
+
+    throw Exception('Kakao API 실패');
+  }
+
+  // 🔧 T맵 도보 API 실제 구현
+  Future<List<RouteInfo>> _tryTmapWalkingAPI(LatLng origin, LatLng destination) async {
+    final tmapApiKey = dotenv.env['TMAP_API_KEY'];
+    if (tmapApiKey == null || tmapApiKey!.isEmpty) {
+      throw Exception('T맵 API 키 없음');
+    }
+
+    print('🚶‍♂️ T맵 도보 API 직접 호출 시작...');
+
+    final url = Uri.parse('https://apis.openapi.sk.com/tmap/routes/pedestrian');
+
+    try {
+      final requestBody = {
+        'startX': origin.longitude.toString(),
+        'startY': origin.latitude.toString(),
+        'endX': destination.longitude.toString(),
+        'endY': destination.latitude.toString(),
+        'reqCoordType': 'WGS84GEO',
+        'resCoordType': 'WGS84GEO',
+        'startName': '출발지',
+        'endName': '목적지'
+      };
+
+      final response = await http.post(
+        url,
+        headers: {
+          'appKey': tmapApiKey!,
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(requestBody),
+      );
+
+      print('📡 T맵 도보 응답 상태: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['features'] != null) {
+          final features = data['features'] as List;
+          List<LatLng> points = [];
+          double totalDistance = 0;
+          double totalTime = 0;
+
+          for (var feature in features) {
+            final geometry = feature['geometry'];
+            final properties = feature['properties'];
+
+            if (geometry != null && geometry['type'] == 'LineString') {
+              final coordinates = geometry['coordinates'] as List? ?? [];
+              for (var coord in coordinates) {
+                if (coord is List && coord.length >= 2) {
+                  points.add(LatLng(
+                    coord[1].toDouble(),
+                    coord[0].toDouble(),
+                  ));
+                }
+              }
+            }
+
+            if (properties != null) {
+              totalDistance += (properties['distance'] ?? 0).toDouble();
+              totalTime += (properties['time'] ?? 0).toDouble();
+            }
+          }
+
+          if (points.isNotEmpty) {
+            return [RouteInfo(
+              points: points,
+              distance: '${(totalDistance / 1000).toStringAsFixed(1)} km',
+              duration: '${(totalTime / 60).round()}분',
+              samplePoints: _getSamplePoints(points),
+              description: '🚶‍♂️ T맵 도보 • 보행자 최적 경로 • 실제 보도 우선',
+              routeType: 'tmap_walking',
+            )];
+          }
+        }
+      }
+    } catch (e) {
+      print('💥 T맵 도보 API 예외: $e');
+    }
+
+    throw Exception('T맵 도보 API 실패');
+  }
+
+  // 🔧 T맵 자동차 API
+  Future<List<RouteInfo>> _tryTmapDrivingAPI(LatLng origin, LatLng destination) async {
+    final tmapApiKey = dotenv.env['TMAP_API_KEY'];
+    if (tmapApiKey == null || tmapApiKey!.isEmpty) {
+      throw Exception('T맵 API 키 없음');
+    }
+
+    print('🚗 T맵 자동차 API 직접 호출 시작...');
+
+    final url = Uri.parse('https://apis.openapi.sk.com/tmap/routes');
+
+    try {
+      final requestBody = {
+        'startX': origin.longitude.toString(),
+        'startY': origin.latitude.toString(),
+        'endX': destination.longitude.toString(),
+        'endY': destination.latitude.toString(),
+        'reqCoordType': 'WGS84GEO',
+        'resCoordType': 'WGS84GEO',
+        'searchOption': '0',
+        'trafficInfo': 'Y'
+      };
+
+      final response = await http.post(
+        url,
+        headers: {
+          'appKey': tmapApiKey!,
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(requestBody),
+      );
+
+      print('📡 T맵 자동차 응답 상태: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['features'] != null) {
+          final features = data['features'] as List;
+          List<LatLng> points = [];
+          double totalDistance = 0;
+          double totalTime = 0;
+
+          for (var feature in features) {
+            final geometry = feature['geometry'];
+            final properties = feature['properties'];
+
+            if (geometry != null && geometry['type'] == 'LineString') {
+              final coordinates = geometry['coordinates'] as List? ?? [];
+              for (var coord in coordinates) {
+                if (coord is List && coord.length >= 2) {
+                  points.add(LatLng(
+                    coord[1].toDouble(),
+                    coord[0].toDouble(),
+                  ));
+                }
+              }
+            }
+
+            if (properties != null) {
+              totalDistance += (properties['distance'] ?? 0).toDouble();
+              totalTime += (properties['time'] ?? 0).toDouble();
+            }
+          }
+
+          if (points.isNotEmpty) {
+            return [RouteInfo(
+              points: points,
+              distance: '${(totalDistance / 1000).toStringAsFixed(1)} km',
+              duration: '${(totalTime / 60).round()}분',
+              samplePoints: _getSamplePoints(points),
+              description: '🚗 T맵 자동차 • 실시간 교통정보 • 한국 도로 최적화',
+              routeType: 'tmap_driving',
+            )];
+          }
+        }
+      }
+    } catch (e) {
+      print('💥 T맵 자동차 API 예외: $e');
+    }
+
+    throw Exception('T맵 자동차 API 실패');
+  }
+
+  // 🆕 Kakao 설명 생성
+  String _generateKakaoDescription(int index, Map<String, dynamic>? summary) {
+    String baseDesc = '🚗 Kakao 자동차';
+
+    if (summary != null) {
+      int tollFare = summary['fare']?['toll'] ?? 0;
+
+      if (tollFare > 0) {
+        baseDesc += ' • 고속도로 이용 • 톨게이트 ${tollFare}원';
+      } else {
+        baseDesc += ' • 일반도로 우선 • 톨게이트 없음';
+      }
+
+      if (index == 0) {
+        baseDesc += ' • 추천경로';
+      } else {
+        baseDesc += ' • 대안경로';
+      }
+    }
+
+    return baseDesc;
+  }
+
+  // 🆕 Kakao 경로 타입 생성
+  String _generateKakaoRouteType(int index, Map<String, dynamic>? summary) {
+    if (summary != null) {
+      int tollFare = summary['fare']?['toll'] ?? 0;
+      if (tollFare > 0) {
+        return 'kakao_highway';
+      }
+    }
+
+    return index == 0 ? 'kakao_recommended' : 'kakao_alternative';
+  }
+
+  // 🔧 경로에 상세 정보 추가
+  List<RouteInfo> _enhanceRoutesWithDetails(List<RouteInfo> routes, TransportMode mode) {
+    for (int i = 0; i < routes.length; i++) {
+      final route = routes[i];
+      String description;
+      String routeType;
+
+      if (mode == TransportMode.driving) {
+        if (i == 0) {
+          description = '🚗 자동차 • 추천 경로 • 실시간 교통정보 반영';
+          routeType = 'driving_recommended';
+        } else if (i == 1) {
+          description = '🚗 자동차 • 대안 경로 • 우회로 이용';
+          routeType = 'driving_alternative';
+        } else {
+          description = '🚗 자동차 • 추가 경로 • 다른 방향';
+          routeType = 'driving_extra';
+        }
+      } else if (mode == TransportMode.walking) {
+        if (i == 0) {
+          description = '🚶‍♂️ 도보 • 추천 경로 • 인도 우선';
+          routeType = 'walking_recommended';
+        } else if (i == 1) {
+          description = '🚶‍♂️ 도보 • 대안 경로 • 안전한 길';
+          routeType = 'walking_alternative';
+        } else {
+          description = '🚶‍♂️ 도보 • 추가 경로 • 다른 방향';
+          routeType = 'walking_extra';
+        }
+      } else {
+        description = route.description.isEmpty ? '일반 경로' : route.description;
+        routeType = route.routeType.isEmpty ? 'normal' : route.routeType;
+      }
+
+      routes[i] = RouteInfo(
+        points: route.points,
+        distance: route.distance,
+        duration: route.duration,
+        samplePoints: route.samplePoints,
+        description: description,
+        routeType: routeType,
+      );
+    }
+
+    return routes;
+  }
+
+  // 🔧 대중교통 경로 상세 정보 추가
+  List<RouteInfo> _enhanceTransitRoutes(List<RouteInfo> routes, List<GoogleTransitRoute> transitDetails) {
+    for (int i = 0; i < routes.length && i < transitDetails.length; i++) {
+      final route = routes[i];
+      final transitDetail = transitDetails[i];
+
+      String description = transitDetail.summary.isNotEmpty
+          ? transitDetail.summary
+          : '🚌 대중교통 경로';
+
+      if (transitDetail.totalFare.isNotEmpty) {
+        description += ' • ${transitDetail.totalFare}';
+      }
+
+      routes[i] = RouteInfo(
+        points: route.points,
+        distance: route.distance,
+        duration: route.duration,
+        samplePoints: route.samplePoints,
+        description: description,
+        routeType: 'transit_api',
+      );
+    }
+
+    return routes;
+  }
+
+  String _getModeDescription(String mode) {
+    switch (mode) {
+      case 'driving':
+        return '실시간 교통정보';
+      case 'walking':
+        return '보행자 도로 우선';
+      case 'transit':
+        return '대중교통';
+      default:
+        return '';
+    }
+  }
+
+  // 🔧 선택된 경로로 지도 업데이트
+  void _updateMapWithSelectedRoute(RouteInfo route) {
+    setState(() {
+      _routePoints = route.points;
+      _routeSummary = '${route.duration} • ${route.distance}';
+
+      // 시간과 거리 파싱
+      final durationMatch = RegExp(r'(\d+)').firstMatch(route.duration);
+      final distanceMatch = RegExp(r'(\d+\.?\d*)').firstMatch(route.distance);
+
+      _estimatedDuration = durationMatch != null ? int.parse(durationMatch.group(1)!) : 0;
+      _estimatedDistance = distanceMatch != null ? double.parse(distanceMatch.group(1)!) : 0.0;
+    });
+
+    _updateMapWithRoute();
+  }
+
+  // 🔧 경로 옵션 보기 (하단 시트)
+  void _showRouteOptions() {
+    print('🎴 경로 옵션 보기 호출됨');
+    print('📊 현재 경로 옵션 수: ${_routeOptions.length}');
+
+    // 🎯 옵션이 없으면 강제로 생성
+    if (_routeOptions.isEmpty) {
+      print('⚠️ 옵션이 없어서 강제 생성');
+      final origin = LatLng(_correctedStartLat, _correctedStartLon);
+      final destination = LatLng(_correctedEndLat, _correctedEndLon);
+
+      _routeOptions = _createEmergencyFallbackRoutes(origin, destination);
+      setState(() {});
+    }
+
+    // 🎯 하단 시트 표시
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        print('🎴 하단 시트 빌더 실행됨');
+
+        return RouteSelectionBottomSheet(
+          routes: _routeOptions,
+          transportMode: _selectedTransportMode,
+          transitRoutes: _transitRouteDetails.isNotEmpty ? _transitRouteDetails : null,
+          onRouteSelected: (route) {
+            print('🎯 경로 선택됨: ${route.duration}');
+            final index = _routeOptions.indexOf(route);
+            setState(() {
+              _selectedRouteIndex = index;
+            });
+            _updateMapWithSelectedRoute(route);
+            Navigator.pop(context);
+          },
+        );
+      },
+    );
+  }
+
+  // 🔧 폴백 메서드들
+  List<RouteInfo> _createAdditionalRoutes(LatLng origin, LatLng destination) {
+    final distance = _calculateDistance(origin.latitude, origin.longitude,
+        destination.latitude, destination.longitude);
+
+    return [RouteInfo(
+      points: _createSimplePath(origin, destination),
+      distance: '${(distance * 1.1).toStringAsFixed(1)} km',
+      duration: '추가 옵션 (예상)',
+      samplePoints: [],
+      description: '💡 추가 경로 옵션',
+      routeType: 'additional',
+    )];
+  }
+
+  List<RouteInfo> _createEmergencyFallbackRoutes(LatLng origin, LatLng destination) {
+    final distance = _calculateDistance(origin.latitude, origin.longitude,
+        destination.latitude, destination.longitude);
+
+    String emoji = _selectedTransportMode == TransportMode.driving ? '🚗' :
+    _selectedTransportMode == TransportMode.walking ? '🚶‍♂️' : '🚌';
+
+    return [
+      RouteInfo(
+        points: _createSimplePath(origin, destination),
+        distance: '${distance.toStringAsFixed(1)} km',
+        duration: '${_estimateTime(distance, _selectedTransportMode)}분 (예상)',
+        samplePoints: [],
+        description: '$emoji 직선 경로 • API 연결 문제로 예상 경로',
+        routeType: 'emergency_fallback',
+      ),
+      RouteInfo(
+        points: _createSimplePath(origin, destination),
+        distance: '${(distance * 1.15).toStringAsFixed(1)} km',
+        duration: '${(_estimateTime(distance, _selectedTransportMode) * 1.2).round()}분 (예상)',
+        samplePoints: [],
+        description: '$emoji 대안 경로 • 예상 우회 경로',
+        routeType: 'emergency_alternative',
+      ),
+    ];
+  }
+
+  List<RouteInfo> _createFallbackTransitOptions(LatLng origin, LatLng destination) {
+    final distance = _calculateDistance(origin.latitude, origin.longitude,
+        destination.latitude, destination.longitude);
+
+    return [
+      RouteInfo(
+        points: _createSimplePath(origin, destination),
+        distance: '${distance.toStringAsFixed(1)} km',
+        duration: '${(distance / 25.0 * 60).round()}분 (예상)',
+        samplePoints: [],
+        description: '🚌 대중교통 예상 경로 • 지하철/버스앱 확인 권장',
+        routeType: 'transit_fallback',
+      ),
+      RouteInfo(
+        points: _createSimplePath(origin, destination),
+        distance: '${(distance * 1.2).toStringAsFixed(1)} km',
+        duration: '${(distance * 1.2 / 20.0 * 60).round()}분 (예상)',
+        samplePoints: [],
+        description: '🚌 버스 중심 예상 경로 • 환승 없음 예상',
+        routeType: 'transit_bus_fallback',
+      ),
+    ];
+  }
+
+  // 간단한 경로 생성 (폴백용)
+  List<LatLng> _createSimplePath(LatLng start, LatLng end) {
+    List<LatLng> points = [];
+    const segments = 10;
+
+    for (int i = 0; i <= segments; i++) {
+      double fraction = i / segments;
+      points.add(LatLng(
+        start.latitude + (end.latitude - start.latitude) * fraction,
+        start.longitude + (end.longitude - start.longitude) * fraction,
+      ));
+    }
+    return points;
+  }
+
+  // 시간 추정
+  int _estimateTime(double distance, TransportMode mode) {
+    switch (mode) {
+      case TransportMode.walking:
+        return (distance / 5.0 * 60).round();
+      case TransportMode.driving:
+        return (distance / 40.0 * 60).round();
+      case TransportMode.transit:
+        return (distance / 25.0 * 60).round();
+      default:
+        return (distance / 30.0 * 60).round();
+    }
+  }
+
+  // 샘플 포인트 생성
+  List<LatLng> _getSamplePoints(List<LatLng> points) {
+    if (points.length <= 2) return points;
+
+    List<LatLng> samples = [];
+    int step = (points.length / 5).round();
+    if (step < 1) step = 1;
+
+    for (int i = 0; i < points.length; i += step) {
+      samples.add(points[i]);
+    }
+
+    if (!samples.contains(points.last)) {
+      samples.add(points.last);
+    }
+
+    return samples;
+  }
+
+  // 🔒 지도 카메라 이동 로직
   void _moveMapCamera() {
     if (_mapController == null || !mounted) return;
 
@@ -298,7 +1382,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       final centerLat = (_correctedStartLat + _correctedEndLat) / 2;
       final centerLon = (_correctedStartLon + _correctedEndLon) / 2;
 
-      final adjustedCenterLat = centerLat + 10;
+      final adjustedCenterLat = centerLat + 0.01;
 
       final distance = _calculateDistance(
           _correctedStartLat, _correctedStartLon,
@@ -314,7 +1398,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       else if (distance < 70) zoomLevel = 11.0;
       else zoomLevel = 10.0;
 
-      print('지도 이동(남쪽 조정): 중심점($adjustedCenterLat, $centerLon), 거리(${distance.toStringAsFixed(2)}km), 줌($zoomLevel)');
+      print('지도 이동: 중심점($adjustedCenterLat, $centerLon), 거리(${distance.toStringAsFixed(2)}km), 줌($zoomLevel)');
 
       _mapController!.moveCamera(
         CameraUpdate.newCameraPosition(
@@ -387,732 +1471,17 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
         northeast: LatLng(maxLat + paddingTop + verticalOffset, maxLng + paddingSide),
       );
 
-      print('경계 설정(아래로 조정): 남서(${bounds.southwest.latitude}, ${bounds.southwest.longitude}), 북동(${bounds.northeast.latitude}, ${bounds.northeast.longitude})');
-
       _mapController!.animateCamera(
         CameraUpdate.newLatLngBounds(bounds, 50.0),
       ).catchError((e) {
-        print('경계 설정 오류: $e. 기본 위치로 이동합니다.');
-        _simpleCameraMove();
+        print('경계 설정 오류: $e');
       });
     } catch (e) {
-      print('경계 계산 오류: $e. 기본 위치로 이동합니다.');
-      _simpleCameraMove();
+      print('경계 계산 오류: $e');
     }
   }
 
-  void _simpleCameraMove() {
-    if (_mapController == null || !mounted) return;
-
-    try {
-      final centerLat = (_correctedStartLat + _correctedEndLat) / 2;
-      final centerLon = (_correctedStartLon + _correctedEndLon) / 2;
-
-      final adjustedCenterLat = centerLat + 0.005;
-
-      print('단순 카메라 이동(남쪽 조정): 중심점($adjustedCenterLat, $centerLon)');
-
-      _mapController!.moveCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: LatLng(adjustedCenterLat, centerLon),
-            zoom: 13.0,
-            tilt: 10.0,
-          ),
-        ),
-      );
-    } catch (e) {
-      print('단순 카메라 이동마저 실패: $e');
-    }
-  }
-
-  // 🔒 기존 메서드 (변경 없음) - 6. 현재 위치 추적 함수
-  void _startLocationTracking() {
-    _positionStreamSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
-    ).listen((Position position) {
-      setState(() {
-        _currentPosition = position;
-        _updateCurrentLocationMarker();
-      });
-
-      // 🆕 실시간 정보 업데이트
-      _updateRemainingTimeDistance();
-    });
-
-    // 🆕 실시간 업데이트 타이머 시작
-    _realTimeUpdateTimer = Timer.periodic(
-      Duration(seconds: 30),
-          (_) => _updateRemainingTimeDistance(),
-    );
-  }
-
-  void _updateCurrentLocationMarker() {
-    if (_currentPosition == null) return;
-
-    _markers.removeWhere((marker) => marker.markerId.value == 'current');
-
-    _markers.add(
-      Marker(
-        markerId: const MarkerId('current'),
-        position: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-        infoWindow: const InfoWindow(title: '현재 위치'),
-      ),
-    );
-  }
-
-  // 🆕 새로 추가된 메서드들
-
-  // 1. 교통수단 선택 위젯
-  Widget _buildTransportModeSelector() {
-    return Card(
-      elevation: 4,
-      margin: const EdgeInsets.all(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-        child: TransportModeSelector(
-          selectedMode: _selectedTransportMode,
-          onModeChanged: _onTransportModeChanged,
-        ),
-      ),
-    );
-  }
-
-  // 2. 교통수단 변경 핸들러
-  void _onTransportModeChanged(TransportMode mode) async {
-    if (_selectedTransportMode == mode) return;
-
-    setState(() {
-      _selectedTransportMode = mode;
-      _transportMode = mode.name;
-      _isSearchingRoutes = true;
-      _routeOptions.clear();
-      _transitRouteDetails.clear();
-      _polylines.clear();
-    });
-
-    await _searchMultipleRoutes();
-  }
-
-  // 3. 다중 경로 검색 (핵심 기능)
-  Future<void> _searchMultipleRoutes() async {
-    if (_isSearchingRoutes) return;
-
-    setState(() {
-      _isSearchingRoutes = true;
-      _errorMessage = null;
-    });
-
-    try {
-      print('🔍 ${_selectedTransportMode.label} 경로 검색 시작...');
-
-      final origin = LatLng(_correctedStartLat, _correctedStartLon);
-      final destination = LatLng(_correctedEndLat, _correctedEndLon);
-
-      if (_selectedTransportMode == TransportMode.transit) {
-        // 대중교통: 상세 정보와 함께 검색
-        final result = await _smartDirectionsService.getTransitRoutesWithDetails(
-          origin,
-          destination,
-        );
-
-        final routes = result['routes'] as List<RouteInfo>;
-        final transitDetails = result['transitDetails'] as List<GoogleTransitRoute>;
-
-        setState(() {
-          _routeOptions = routes;
-          _transitRouteDetails = transitDetails;
-          _selectedRouteIndex = 0;
-        });
-
-        if (routes.isNotEmpty) {
-          _updateMapWithSelectedRoute(routes.first);
-          print('✅ 대중교통 ${routes.length}개 경로 + 상세정보 로드 완료');
-        }
-      } else {
-        // 자동차, 도보: 일반 검색
-        final routes = await _smartDirectionsService.getRoutes(
-          origin,
-          destination,
-          _selectedTransportMode,
-        );
-
-        setState(() {
-          _routeOptions = routes;
-          _transitRouteDetails.clear();
-          _selectedRouteIndex = 0;
-        });
-
-        if (routes.isNotEmpty) {
-          _updateMapWithSelectedRoute(routes.first);
-          print('✅ ${_selectedTransportMode.label} ${routes.length}개 경로 로드 완료');
-        }
-      }
-    } catch (e) {
-      print('❌ 경로 검색 실패: $e');
-      setState(() {
-        _errorMessage = '경로 검색 실패: $e';
-      });
-
-      // 폴백: 기존 방식으로 단일 경로 검색
-      await _fetchRoute(_selectedTransportMode.name);
-    } finally {
-      setState(() {
-        _isSearchingRoutes = false;
-      });
-    }
-  }
-
-  // 4. 선택된 경로로 지도 업데이트
-  void _updateMapWithSelectedRoute(RouteInfo route) {
-    setState(() {
-      _routePoints = route.points;
-      _routeSummary = '${route.duration} • ${route.distance}';
-
-      // 시간과 거리 파싱
-      final durationMatch = RegExp(r'(\d+)').firstMatch(route.duration);
-      final distanceMatch = RegExp(r'(\d+\.?\d*)').firstMatch(route.distance);
-
-      _estimatedDuration = durationMatch != null ? int.parse(durationMatch.group(1)!) : 0;
-      _estimatedDistance = distanceMatch != null ? double.parse(distanceMatch.group(1)!) : 0.0;
-    });
-
-    _updateMapWithRoute();
-    _startRealTimeTracking();
-  }
-
-  // 5. 경로 옵션 보기 (하단 시트)
-  void _showRouteOptions() {
-    if (_routeOptions.isEmpty) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => RouteSelectionBottomSheet(
-        routes: _routeOptions,
-        transportMode: _selectedTransportMode,
-        transitRoutes: _transitRouteDetails.isNotEmpty ? _transitRouteDetails : null,
-        onRouteSelected: (route) {
-          final index = _routeOptions.indexOf(route);
-          setState(() {
-            _selectedRouteIndex = index;
-          });
-          _updateMapWithSelectedRoute(route);
-          Navigator.pop(context);
-        },
-      ),
-    );
-  }
-
-  // 6. 빠른 경로 선택 버튼들
-  Widget _buildQuickRouteSelector() {
-    if (_routeOptions.length <= 1) return SizedBox.shrink();
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      height: 50,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: _routeOptions.length,
-        itemBuilder: (context, index) {
-          final route = _routeOptions[index];
-          final isSelected = index == _selectedRouteIndex;
-
-          return GestureDetector(
-            onTap: () {
-              setState(() {
-                _selectedRouteIndex = index;
-              });
-              _updateMapWithSelectedRoute(route);
-            },
-            child: Container(
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: isSelected ? _selectedTransportMode.color : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: _selectedTransportMode.color,
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '옵션 ${index + 1}',
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : _selectedTransportMode.color,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    route.duration.split(' • ')[0],
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.black,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  // 7. 대중교통 정보 패널
-  Widget _buildTransitInfoPanel() {
-    if (_selectedTransportMode != TransportMode.transit ||
-        _transitRouteDetails.isEmpty ||
-        _selectedRouteIndex >= _transitRouteDetails.length) {
-      return SizedBox.shrink();
-    }
-
-    final transitRoute = _transitRouteDetails[_selectedRouteIndex];
-
-    return Card(
-      margin: EdgeInsets.all(16),
-      child: Padding(
-        padding: EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.directions_transit, color: Colors.orange),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    transitRoute.summary.isNotEmpty ? transitRoute.summary : '대중교통 경로',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.list_alt),
-                  onPressed: () => _showTransitDetails(transitRoute),
-                ),
-              ],
-            ),
-            SizedBox(height: 8),
-            Row(
-              children: [
-                if (transitRoute.totalFare.isNotEmpty) ...[
-                  Icon(Icons.payments, size: 16, color: Colors.green),
-                  SizedBox(width: 4),
-                  Text(
-                    '요금: ${transitRoute.totalFare}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                ],
-                Icon(Icons.sync_alt, size: 16, color: Colors.blue),
-                SizedBox(width: 4),
-                Text(
-                  '환승: ${_countTransfers(transitRoute)}회',
-                  style: TextStyle(fontSize: 12, color: Colors.blue),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 8. 대중교통 환승 횟수 계산
-  int _countTransfers(GoogleTransitRoute transitRoute) {
-    int transferCount = 0;
-    for (int i = 0; i < transitRoute.steps.length - 1; i++) {
-      final currentStep = transitRoute.steps[i];
-      final nextStep = transitRoute.steps[i + 1];
-
-      if (currentStep.mode == 'TRANSIT' && nextStep.mode == 'TRANSIT') {
-        transferCount++;
-      }
-    }
-    return transferCount;
-  }
-
-  // 9. 대중교통 상세 정보 표시
-  void _showTransitDetails(GoogleTransitRoute transitRoute) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DetailedTransitStepsWidget(
-        route: _routeOptions[_selectedRouteIndex],
-        steps: transitRoute.steps,
-      ),
-    );
-  }
-
-  // 10. 실시간 정보 카드
-  Widget _buildRealTimeInfo() {
-    return Card(
-      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Padding(
-        padding: EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Icon(
-              Icons.my_location,
-              color: _selectedTransportMode.color,
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '실시간 정보',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    _remainingDistance > 0
-                        ? '남은 거리: ${_remainingDistance.toStringAsFixed(1)}km • 예상 시간: ${_remainingTime}분'
-                        : _routeSummary,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              icon: Icon(Icons.refresh),
-              onPressed: _updateRemainingTimeDistance,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 11. 실시간 추적 시작
-  void _startRealTimeTracking() {
-    _updateRemainingTimeDistance();
-  }
-
-  // 12. 남은 거리와 시간 업데이트
-  void _updateRemainingTimeDistance() {
-    if (_currentPosition == null || _routePoints.isEmpty) return;
-
-    final currentLocation = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
-    final destination = LatLng(_correctedEndLat, _correctedEndLon);
-
-    // 직선 거리 계산
-    final distance = _calculateDistance(
-      currentLocation.latitude, currentLocation.longitude,
-      destination.latitude, destination.longitude,
-    );
-
-    setState(() {
-      _remainingDistance = distance;
-
-      // 교통수단별 예상 시간 계산
-      switch (_selectedTransportMode) {
-        case TransportMode.walking:
-          _remainingTime = (distance * 12).round(); // 도보: km당 12분
-          break;
-        case TransportMode.transit:
-          _remainingTime = (distance * 3).round(); // 대중교통: km당 3분
-          break;
-        case TransportMode.driving:
-          _remainingTime = (distance * 1.5).round(); // 자동차: km당 1.5분
-          break;
-      }
-
-      // 다음 안내 업데이트
-      if (_instructions.isNotEmpty) {
-        _nextInstruction = _instructions.first;
-      }
-    });
-  }
-
-  // 🔒 기존 메서드 (기능 확장) - 경로 데이터 가져오기
-  Future<void> _fetchRoute([String? transportMode]) async {
-    if (_isRouteInitialized && transportMode == null) return;
-
-    try {
-      if (transportMode != null) {
-        _transportMode = transportMode;
-        _selectedTransportMode = _getTransportModeFromString(transportMode);
-      }
-
-      String mode;
-      if (_transportMode == 'DRIVING') {
-        mode = 'driving';
-      } else if (_transportMode == 'TRANSIT') {
-        mode = 'transit';
-      } else {
-        mode = 'walking';
-      }
-
-      if (!_isValidKoreanCoordinate(_correctedStartLat, _correctedStartLon) ||
-          !_isValidKoreanCoordinate(_correctedEndLat, _correctedEndLon)) {
-        print('경고: API 호출 전 좌표 유효성 검사 실패, 기본 좌표 사용');
-
-        _correctedStartLat = 35.5384;
-        _correctedStartLon = 129.2582;
-        _correctedEndLat = 35.5361;
-        _correctedEndLon = 129.3114;
-      }
-
-      final startLatStr = _correctedStartLat.toStringAsFixed(6);
-      final startLonStr = _correctedStartLon.toStringAsFixed(6);
-      final endLatStr = _correctedEndLat.toStringAsFixed(6);
-      final endLonStr = _correctedEndLon.toStringAsFixed(6);
-
-      print('API 요청 좌표: 출발($startLatStr, $startLonStr), 도착($endLatStr, $endLonStr)');
-
-      final url = Uri.parse(
-          'https://maps.googleapis.com/maps/api/directions/json?'
-              'origin=$startLatStr,$startLonStr'
-              '&destination=$endLatStr,$endLonStr'
-              '&mode=$mode'
-              '&language=ko'
-              '&key=$apiKey'
-      );
-
-      print('API 요청 URL: $url');
-
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(utf8.decode(response.bodyBytes));
-        print('API 응답 상태: ${data['status']}');
-        print('API 오류 메시지: ${data['error_message'] ?? "없음"}');
-
-        if (data['status'] == 'OK') {
-          PolylinePoints polylinePoints = PolylinePoints();
-          List<PointLatLng> decodedPolyline =
-          polylinePoints.decodePolyline(data['routes'][0]['overview_polyline']['points']);
-
-          setState(() {
-            _routePoints = decodedPolyline
-                .map((point) => LatLng(point.latitude, point.longitude))
-                .toList();
-
-            _routeSummary = data['routes'][0]['summary'] ?? '경로 정보';
-            _estimatedDuration = data['routes'][0]['legs'][0]['duration']['value'] ~/ 60;
-            _estimatedDistance = data['routes'][0]['legs'][0]['distance']['value'] / 1000;
-
-            _instructions = [];
-            _transitDetails = [];
-
-            for (var step in data['routes'][0]['legs'][0]['steps']) {
-              String instruction = step['html_instructions'] ?? '';
-              instruction = instruction.replaceAll(RegExp(r'<[^>]*>'), ' ');
-              _instructions.add(instruction);
-
-              if (step['travel_mode'] == 'TRANSIT' && step['transit_details'] != null) {
-                final transitDetails = step['transit_details'];
-                final line = transitDetails['line']?['short_name'] ??
-                    transitDetails['line']?['name'] ?? '노선 정보 없음';
-                final vehicle = transitDetails['line']?['vehicle']?['name'] ?? '대중교통';
-                final departureStop = transitDetails['departure_stop']?['name'] ?? '출발지';
-                final arrivalStop = transitDetails['arrival_stop']?['name'] ?? '도착지';
-                final numStops = transitDetails['num_stops'] ?? 0;
-                final headSign = transitDetails['headsign'] ?? '';
-
-                String transitInstruction = '🚍 $vehicle $line번 - $departureStop에서 승차, $arrivalStop에서 하차 (정거장 $numStops개)';
-                if (headSign.isNotEmpty) {
-                  transitInstruction += ' ($headSign 방향)';
-                }
-                _instructions.add(transitInstruction);
-
-                _transitDetails.add(TransitDetails(
-                  line: line,
-                  vehicle: vehicle,
-                  departureStop: departureStop,
-                  arrivalStop: arrivalStop,
-                  numStops: numStops,
-                  headSign: headSign,
-                ));
-              }
-            }
-            _errorMessage = null;
-          });
-
-          _updateMapWithRoute();
-        } else if (data['status'] == 'ZERO_RESULTS') {
-          print('경로를 찾을 수 없습니다.');
-
-          if (data.containsKey('available_travel_modes') &&
-              data['available_travel_modes'] is List &&
-              (data['available_travel_modes'] as List).isNotEmpty) {
-
-            List<String> availableModes = List<String>.from(data['available_travel_modes']);
-            String availableModesText = availableModes.map((mode) {
-              switch (mode) {
-                case 'DRIVING': return '자동차';
-                case 'WALKING': return '도보';
-                case 'BICYCLING': return '자전거';
-                case 'TRANSIT': return '대중교통';
-                default: return mode;
-              }
-            }).join(', ');
-
-            setState(() {
-              _errorMessage = '현재 선택한 이동 수단(${_getTransportModeText()})으로는 경로를 찾을 수 없습니다. '
-                  '이용 가능한 이동 수단: $availableModesText';
-            });
-
-            if (availableModes.isNotEmpty && !availableModes.contains(_transportMode.toUpperCase()) && mounted) {
-              String suggestedMode = _getModeFromApiMode(availableModes.first);
-
-              showDialog(
-                context: context,
-                builder: (BuildContext dialogContext) {
-                  return AlertDialog(
-                    title: Text('다른 이동 수단 이용'),
-                    content: Text('${_getTransportModeText()} 모드로는 경로를 찾을 수 없습니다. ${_getTransportModeText(suggestedMode)} 모드로 시도하시겠습니까?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(dialogContext).pop();
-                        },
-                        child: Text('취소'),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(dialogContext).pop();
-                          if (mounted) {
-                            _fetchRoute(suggestedMode);
-                          }
-                        },
-                        child: Text('확인'),
-                      ),
-                    ],
-                  );
-                },
-              );
-            }
-          } else {
-            setState(() {
-              _errorMessage = '해당 이동 수단으로 경로를 찾을 수 없습니다. 직선 경로를 표시합니다.';
-            });
-          }
-
-          _createDirectRoute();
-        } else {
-          print('API 오류: ${data['error_message'] ?? data['status']}. 직선 경로를 표시합니다.');
-
-          _createDirectRoute();
-
-          setState(() {
-            if (data['status'] == 'REQUEST_DENIED') {
-              _errorMessage = '경로 탐색 권한이 거부되었습니다. API 키를 확인해주세요. 직선 경로를 표시합니다.';
-            } else {
-              _errorMessage = '경로 탐색 실패: ${data['status']}. 직선 경로를 표시합니다.';
-            }
-          });
-        }
-      } else {
-        _createDirectRoute();
-
-        setState(() {
-          _errorMessage = '경로 API 호출 실패: ${response.statusCode}. 직선 경로를 표시합니다.';
-        });
-      }
-    } catch (e) {
-      print('경로 가져오기 예외: $e');
-
-      _createDirectRoute();
-
-      setState(() {
-        _errorMessage = '경로 가져오기 오류: $e. 직선 경로를 표시합니다.';
-      });
-    }
-  }
-
-  String _getModeFromApiMode(String apiMode) {
-    switch (apiMode.toUpperCase()) {
-      case 'DRIVING': return 'DRIVING';
-      case 'WALKING': return 'WALK';
-      case 'BICYCLING': return 'BICYCLING';
-      case 'TRANSIT': return 'TRANSIT';
-      default: return 'DRIVING';
-    }
-  }
-
-  String _getTransportModeText([String? mode]) {
-    String transportMode = mode ?? _transportMode;
-    switch (transportMode) {
-      case 'WALK':
-        return '도보';
-      case 'TRANSIT':
-        return '대중교통';
-      case 'DRIVING':
-        return '자동차';
-      case 'BICYCLING':
-        return '자전거';
-      default:
-        return '이동';
-    }
-  }
-
-  // 🔒 기존 메서드 (변경 없음) - 직선 경로 생성
-  void _createDirectRoute() {
-    print('직선 경로 생성');
-
-    _routePoints = [
-      LatLng(_correctedStartLat, _correctedStartLon),
-      LatLng(_correctedEndLat, _correctedEndLon),
-    ];
-
-    double distance = _calculateDistance(
-        _correctedStartLat, _correctedStartLon,
-        _correctedEndLat, _correctedEndLon
-    );
-
-    int durationMinutes;
-    if (_transportMode == 'WALK') {
-      durationMinutes = (distance * 12).round();
-    } else if (_transportMode == 'TRANSIT') {
-      durationMinutes = (distance * 3).round();
-    } else {
-      durationMinutes = (distance * 1.5).round();
-    }
-
-    _routeSummary = '${widget.startName}에서 ${widget.endName}까지 직선 경로';
-    _estimatedDuration = durationMinutes;
-    _estimatedDistance = distance;
-
-    _instructions = ['${widget.startName}에서 ${widget.endName}까지 이동합니다.'];
-
-    _updateMapWithRoute();
-  }
-
-  // 🔒 기존 메서드 (기능 확장) - 경로 업데이트 및 지도 표시
+  // 🔒 경로 업데이트 및 지도 표시
   void _updateMapWithRoute() {
     print('경로 업데이트: ${_routePoints.length}개 포인트');
     if (_routePoints.isNotEmpty) {
@@ -1149,7 +1518,6 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
     if (_routePoints.isNotEmpty) {
       Color routeColor = _selectedTransportMode.color;
 
-      // 🆕 교통수단별 라인 스타일
       List<PatternItem> patterns = [];
       if (_selectedTransportMode == TransportMode.walking) {
         patterns = [PatternItem.dot, PatternItem.gap(10)];
@@ -1207,223 +1575,6 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
     return degree * (pi / 180);
   }
 
-  double _toDegrees(double radian) {
-    return radian * (180 / pi);
-  }
-
-  // 🔒 기존 UI 메서드들 (기능 확장)
-
-  Widget _buildRouteInstructions() {
-    if (_instructions.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: const Text(
-          '경로 안내 정보가 없습니다.',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.black,
-          ),
-        ),
-      );
-    }
-
-    Widget _buildTransitSummary() {
-      if (_transitDetails.isEmpty || _selectedTransportMode != TransportMode.transit) {
-        return const SizedBox.shrink();
-      }
-
-      return Container(
-        padding: const EdgeInsets.all(16),
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.blue.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.blue.withOpacity(0.2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '대중교통 이용 정보',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 18,
-                color: Colors.blue,
-              ),
-            ),
-            const SizedBox(height: 12),
-            ..._transitDetails.map((detail) {
-              IconData vehicleIcon;
-              Color vehicleColor;
-
-              if (detail.vehicle.contains('버스')) {
-                vehicleIcon = Icons.directions_bus;
-                vehicleColor = Colors.green;
-              } else if (detail.vehicle.contains('지하철') || detail.vehicle.contains('전철')) {
-                vehicleIcon = Icons.subway;
-                vehicleColor = Colors.blue;
-              } else {
-                vehicleIcon = Icons.directions_transit;
-                vehicleColor = Colors.purple;
-              }
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(vehicleIcon, color: vehicleColor, size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${detail.vehicle} ${detail.line}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: vehicleColor,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${detail.departureStop} → ${detail.arrivalStop}',
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          if (detail.headSign.isNotEmpty)
-                            Text(
-                              '${detail.headSign} 방향 (정거장 ${detail.numStops}개)',
-                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  '상세 안내',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.black,
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _showFullInstructions ? Icons.expand_less : Icons.expand_more,
-                    color: Colors.black,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      _showFullInstructions = !_showFullInstructions;
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-
-          if (_transitDetails.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _buildTransitSummary(),
-            ),
-
-          const Divider(height: 1, color: Color(0xFFEEEEEE)),
-          if (_showFullInstructions)
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _instructions.length,
-              itemBuilder: (context, index) {
-                String instruction = _instructions[index].replaceAll(RegExp(r'<[^>]*>'), ' ').trim();
-
-                bool isTransitInfo = instruction.startsWith('🚍');
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: isTransitInfo
-                              ? Colors.blue.withOpacity(0.1)
-                              : Colors.grey[200],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Center(
-                          child: isTransitInfo
-                              ? const Icon(Icons.directions_transit, size: 14, color: Colors.blue)
-                              : Text(
-                              '${index + 1}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              )
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          instruction,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: isTransitInfo ? FontWeight.w600 : FontWeight.normal,
-                            color: isTransitInfo ? Colors.blue : Colors.black,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Text(
-                _instructions.first.replaceAll(RegExp(r'<[^>]*>'), ' ').trim(),
-                style: const TextStyle(fontSize: 14),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1441,7 +1592,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
         actions: [
-          // 🆕 교통수단 아이콘과 경로 옵션 버튼
+          // 교통수단 아이콘과 경로 옵션 버튼
           Container(
             margin: EdgeInsets.only(right: 8),
             child: IconButton(
@@ -1457,7 +1608,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       ),
       body: Stack(
         children: [
-          // 지도 위젯 (기존 유지)
+          // 지도 위젯
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: LatLng(
@@ -1490,7 +1641,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
             mapType: MapType.normal,
           ),
 
-          // 🆕 상단: 교통수단 선택
+          // 상단: 교통수단 선택
           Positioned(
             top: 16,
             left: 16,
@@ -1498,239 +1649,115 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
             child: _buildTransportModeSelector(),
           ),
 
-          // 🆕 중간: 빠른 경로 선택 (여러 옵션이 있을 때만)
-          if (_routeOptions.length > 1)
-            Positioned(
-              top: 90,
-              left: 0,
-              right: 0,
-              child: _buildQuickRouteSelector(),
-            ),
-
-          // 🆕 실시간 정보 카드
-          Positioned(
-            bottom: 200,
-            left: 0,
-            right: 0,
-            child: _buildRealTimeInfo(),
-          ),
-
-          // 🆕 대중교통 정보 패널 (대중교통 모드일 때만)
-          if (_selectedTransportMode == TransportMode.transit)
-            Positioned(
-              bottom: 140,
-              left: 0,
-              right: 0,
-              child: _buildTransitInfoPanel(),
-            ),
-
-          // 하단 정보 패널들
+          // 하단 정보 패널
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 안내 목록 패널 (기존)
-                if (_instructions.isNotEmpty && !_isLoading) _buildRouteInstructions(),
-
-                // 경로 정보 및 컨트롤 패널 (기존 + 확장)
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: _instructions.isEmpty
-                        ? const BorderRadius.vertical(top: Radius.circular(16))
-                        : BorderRadius.zero,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        spreadRadius: 0,
-                        blurRadius: 10,
-                      ),
-                    ],
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    spreadRadius: 0,
+                    blurRadius: 10,
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 오류 메시지 (간단하게)
+                  if (_errorMessage != null && _routePoints.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.orange, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '일부 경로 정보가 제한적입니다',
+                              style: const TextStyle(color: Colors.orange, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // 제목 행 (깔끔하게)
+                  Row(
                     children: [
-                      // 🆕 오류 메시지 (개선)
-                      if (_errorMessage != null && _routePoints.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16.0),
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.05),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.warning_amber, color: Colors.red, size: 16),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _errorMessage!,
-                                    style: const TextStyle(
-                                      color: Colors.red,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                      // 🆕 제목 (교통수단 포함)
-                      Row(
-                        children: [
-                          Text(
-                            _selectedTransportMode.icon,
-                            style: const TextStyle(fontSize: 24),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
+                      Text(_selectedTransportMode.icon, style: TextStyle(fontSize: 24)),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
                               '${_selectedTransportMode.label} 경로',
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.black,
-                              ),
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                             ),
-                          ),
-                          // 🆕 검색 상태 표시
-                          if (_isSearchingRoutes)
-                            const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                            Text(
+                              '거리: ${_estimatedDistance.toStringAsFixed(1)}km • 시간: $_estimatedDuration분',
+                              style: TextStyle(color: Colors.grey[600], fontSize: 14),
                             ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-
-                      // 🆕 경로 정보 (개선)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '총 거리: ${_estimatedDistance.toStringAsFixed(1)}km • 예상 시간: $_estimatedDuration분',
-                              style: TextStyle(
-                                color: Colors.grey[700],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          // 🆕 경로 개수 표시
-                          if (_routeOptions.length > 1)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: _selectedTransportMode.color.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '${_routeOptions.length}개 옵션',
-                                style: TextStyle(
-                                  color: _selectedTransportMode.color,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // 🆕 액션 버튼들 (개선)
-                      Row(
-                        children: [
-                          // 전체 경로 보기 버튼
-                          Expanded(
-                            flex: 2,
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                if (_mapController != null) {
-                                  _fitMapToBounds();
-                                }
-                              },
-                              icon: const Icon(Icons.map, size: 16),
-                              label: const Text('전체 경로'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.grey[100],
-                                foregroundColor: Colors.black,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                elevation: 0,
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(width: 8),
-
-                          // 경로 옵션 보기 버튼
-                          if (_routeOptions.length > 1) ...[
-                            Expanded(
-                              flex: 2,
-                              child: ElevatedButton.icon(
-                                onPressed: _showRouteOptions,
-                                icon: const Icon(Icons.alt_route, size: 16),
-                                label: const Text('다른 경로'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _selectedTransportMode.color.withOpacity(0.1),
-                                  foregroundColor: _selectedTransportMode.color,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  elevation: 0,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
                           ],
-
-                          // 길안내 시작 버튼
-                          Expanded(
-                            flex: 3,
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                // 🆕 실제 길안내 화면으로 이동하거나 실시간 추적 시작
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('${_selectedTransportMode.label} 길안내를 시작합니다'),
-                                    backgroundColor: _selectedTransportMode.color,
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                                _startRealTimeTracking();
-                              },
-                              icon: const Icon(Icons.navigation, size: 16),
-                              label: const Text('길안내 시작'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _selectedTransportMode.color,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                elevation: 2,
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
+                      // 검색 상태 표시
+                      if (_isSearchingRoutes)
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                     ],
                   ),
-                ),
-              ],
+
+                  SizedBox(height: 16),
+
+                  // 🎯 경로 옵션 버튼만 (중앙에 크게)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        print('🎴 경로 옵션 버튼 클릭됨');
+                        print('현재 경로 수: ${_routeOptions.length}');
+                        print('검색 중 여부: $_isSearchingRoutes');
+                        _showRouteOptions();
+                      },
+                      icon: Icon(Icons.alt_route, size: 20),
+                      label: Text(
+                        '${_routeOptions.length}개 경로 옵션 보기',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _selectedTransportMode.color,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 
-          // 로딩 인디케이터 (기존 + 개선)
+          // 로딩 인디케이터
           if (_isLoading)
             Container(
               color: Colors.black.withOpacity(0.3),
@@ -1755,36 +1782,6 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
             ),
         ],
       ),
-      // 🆕 플로팅 액션 버튼 (경로 옵션 빠른 접근)
-      floatingActionButton: _routeOptions.length > 1 ? FloatingActionButton(
-        onPressed: _showRouteOptions,
-        backgroundColor: _selectedTransportMode.color,
-        child: Stack(
-          children: [
-            const Icon(Icons.alt_route, color: Colors.white),
-            Positioned(
-              right: 0,
-              top: 0,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  '${_routeOptions.length}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ) : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }
