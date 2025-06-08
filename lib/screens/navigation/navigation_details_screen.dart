@@ -1382,7 +1382,7 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       final centerLat = (_correctedStartLat + _correctedEndLat) / 2;
       final centerLon = (_correctedStartLon + _correctedEndLon) / 2;
 
-      final adjustedCenterLat = centerLat + 0.01;
+      final adjustedCenterLat = centerLat + 10;
 
       final distance = _calculateDistance(
           _correctedStartLat, _correctedStartLon,
@@ -1390,15 +1390,15 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       );
 
       double zoomLevel;
-      if (distance < 1) zoomLevel = 16.0;
-      else if (distance < 3) zoomLevel = 15.0;
-      else if (distance < 7) zoomLevel = 14.0;
-      else if (distance < 15) zoomLevel = 13.0;
-      else if (distance < 30) zoomLevel = 12.0;
-      else if (distance < 70) zoomLevel = 11.0;
-      else zoomLevel = 10.0;
+      if (distance < 1) zoomLevel = 13.0;       // 16.0 → 13.0
+      else if (distance < 3) zoomLevel = 12.0;  // 15.0 → 12.0
+      else if (distance < 7) zoomLevel = 11.0;  // 14.0 → 11.0
+      else if (distance < 15) zoomLevel = 10.0; // 13.0 → 10.0
+      else if (distance < 30) zoomLevel = 9.0;  // 12.0 → 9.0
+      else if (distance < 70) zoomLevel = 8.0;  // 11.0 → 8.0
+      else zoomLevel = 7.0;                     // 10.0 → 7.0
 
-      print('지도 이동: 중심점($adjustedCenterLat, $centerLon), 거리(${distance.toStringAsFixed(2)}km), 줌($zoomLevel)');
+      print('지도 이동(남쪽 조정): 중심점($adjustedCenterLat, $centerLon), 거리(${distance.toStringAsFixed(2)}km), 줌($zoomLevel)');
 
       _mapController!.moveCamera(
         CameraUpdate.newCameraPosition(
@@ -1433,6 +1433,11 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
         boundPoints.add(LatLng(_correctedEndLat, _correctedEndLon));
       }
 
+      // 현재 위치도 경계에 포함
+      if (_currentPosition != null) {
+        boundPoints.add(LatLng(_currentPosition!.latitude, _currentPosition!.longitude));
+      }
+
       double minLat = double.infinity;
       double maxLat = -double.infinity;
       double minLng = double.infinity;
@@ -1450,37 +1455,62 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
 
       if (latDiff < 0.01) {
         double center = (maxLat + minLat) / 2;
-        minLat = center - 0.005;
-        maxLat = center + 0.005;
+        minLat = center - 0.01;
+        maxLat = center + 0.01;
       }
 
       if (lngDiff < 0.01) {
         double center = (maxLng + minLng) / 2;
-        minLng = center - 0.005;
-        maxLng = center + 0.005;
+        minLng = center - 0.01;
+        maxLng = center + 0.01;
       }
 
-      double paddingTop = 0.008;
-      double paddingBottom = 0.002;
-      double paddingSide = 0.005;
+      // 🆕 사용자 위치를 중심으로 조정
+      if (_currentPosition != null) {
+        double userLat = _currentPosition!.latitude;
+        double userLng = _currentPosition!.longitude;
 
-      double verticalOffset = -0.05;
+        // 사용자 위치가 중심 근처에 오도록 경계 조정
+        double paddingTop = 0.008;     // 위쪽 여백 줄임
+        double paddingBottom = 0.025;  // 아래쪽 여백 늘림
+        double paddingSide = 0.015;
+
+        // 사용자 위치 기준으로 경계 재계산
+        minLat = min(minLat, userLat - paddingBottom);
+        maxLat = max(maxLat, userLat + paddingTop);
+        minLng = min(minLng, userLng - paddingSide);
+        maxLng = max(maxLng, userLng + paddingSide);
+      } else {
+        double paddingTop = 0.02;
+        double paddingBottom = 0.015;
+        double paddingSide = 0.02;
+
+        minLat = minLat - paddingBottom;
+        maxLat = maxLat + paddingTop;
+        minLng = minLng - paddingSide;
+        maxLng = maxLng + paddingSide;
+      }
+
+      double verticalOffset = 0.0;  // 기존 -0.05 제거
 
       LatLngBounds bounds = LatLngBounds(
-        southwest: LatLng(minLat - paddingBottom + verticalOffset, minLng - paddingSide),
-        northeast: LatLng(maxLat + paddingTop + verticalOffset, maxLng + paddingSide),
+        southwest: LatLng(minLat + verticalOffset, minLng),
+        northeast: LatLng(maxLat + verticalOffset, maxLng),
       );
 
+      print('경계 설정(사용자 중심): 남서(${bounds.southwest.latitude}, ${bounds.southwest.longitude}), 북동(${bounds.northeast.latitude}, ${bounds.northeast.longitude})');
+
       _mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, 50.0),
+        CameraUpdate.newLatLngBounds(bounds, 100.0),
       ).catchError((e) {
-        print('경계 설정 오류: $e');
+        print('경계 설정 오류: $e. 기본 위치로 이동합니다.');
+        _simpleCameraMove();
       });
     } catch (e) {
-      print('경계 계산 오류: $e');
+      print('경계 계산 오류: $e. 기본 위치로 이동합니다.');
+      _simpleCameraMove();
     }
   }
-
   // 🔒 경로 업데이트 및 지도 표시
   void _updateMapWithRoute() {
     print('경로 업데이트: ${_routePoints.length}개 포인트');
@@ -1559,7 +1589,30 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       }
     });
   }
+  void _simpleCameraMove() {
+    if (_mapController == null || !mounted) return;
 
+    try {
+      final centerLat = (_correctedStartLat + _correctedEndLat) / 2;
+      final centerLon = (_correctedStartLon + _correctedEndLon) / 2;
+
+      final adjustedCenterLat = centerLat + 0.005;
+
+      print('단순 카메라 이동(남쪽 조정): 중심점($adjustedCenterLat, $centerLon)');
+
+      _mapController!.moveCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(adjustedCenterLat, centerLon),
+            zoom: 10.0,  // 13.0 → 10.0
+            tilt: 10.0,
+          ),
+        ),
+      );
+    } catch (e) {
+      print('단순 카메라 이동마저 실패: $e');
+    }
+  }
   double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
     const double earthRadius = 6371;
     double dLat = _toRadians(lat2 - lat1);

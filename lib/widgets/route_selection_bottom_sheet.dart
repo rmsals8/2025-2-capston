@@ -6,7 +6,7 @@ import '../models/route_info.dart';
 import '../models/transport_mode.dart';
 import '../screens/navigation/navigation_screen.dart';
 import '../services/google_transit_service.dart';
-
+import 'package:geolocator/geolocator.dart';
 
 class RouteSelectionBottomSheet extends StatelessWidget {
   final List<RouteInfo> routes;
@@ -95,28 +95,82 @@ class RouteSelectionBottomSheet extends StatelessWidget {
     );
   }
 
-  void _startNavigation(BuildContext context, RouteInfo route, int index) {
+  void _startNavigation(BuildContext context, RouteInfo route, int routeIndex) async {
     if (!context.mounted) return;
 
-    GoogleTransitRoute? selectedTransitRoute;
-    if (transportMode == TransportMode.transit &&
-        transitRoutes != null &&
-        index < transitRoutes!.length) {
-      selectedTransitRoute = transitRoutes![index];
-    }
+    // 현재 위치 권한 및 위치 확인
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => NavigationScreen(
-          route: route,
-          origin: route.points.first,
-          destination: route.points.last,
-          transportMode: transportMode.name,
-          transitRoute: selectedTransitRoute,
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      LatLng origin;
+
+      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+        // 위치 권한이 있으면 현재 위치 사용
+        try {
+          Position currentPosition = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 5),
+          );
+          origin = LatLng(currentPosition.latitude, currentPosition.longitude);
+          print('현재 위치에서 네비게이션 시작: ${origin.latitude}, ${origin.longitude}');
+        } catch (e) {
+          // 현재 위치 획득 실패 시 기존 경로의 시작점 사용
+          origin = route.points.first;
+          print('현재 위치 획득 실패, 기존 출발점 사용: $e');
+        }
+      } else {
+        // 위치 권한이 없으면 기존 경로의 시작점 사용
+        origin = route.points.first;
+        print('위치 권한 없음, 기존 출발점 사용');
+      }
+
+      // 대중교통인 경우 상세 정보도 함께 전달
+      GoogleTransitRoute? selectedTransitRoute;
+      if (transportMode == TransportMode.transit &&
+          transitRoutes != null &&
+          routeIndex < transitRoutes!.length) {
+        selectedTransitRoute = transitRoutes![routeIndex];
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => NavigationScreen(
+            route: route,
+            origin: origin,  // 현재 위치 또는 기존 출발점
+            destination: route.points.last,
+            transportMode: transportMode.name,
+            transitRoute: selectedTransitRoute,
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      print('네비게이션 시작 오류: $e');
+      // 오류 발생 시 기존 방식으로 실행
+      GoogleTransitRoute? selectedTransitRoute;
+      if (transportMode == TransportMode.transit &&
+          transitRoutes != null &&
+          routeIndex < transitRoutes!.length) {
+        selectedTransitRoute = transitRoutes![routeIndex];
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => NavigationScreen(
+            route: route,
+            origin: route.points.first,
+            destination: route.points.last,
+            transportMode: transportMode.name,
+            transitRoute: selectedTransitRoute,
+          ),
+        ),
+      );
+    }
   }
 
   // 🆕 상세 정보 다이얼로그 (실제 API 데이터 포함)
