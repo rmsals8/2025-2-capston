@@ -56,7 +56,13 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _autoProcessVoice = true;
   bool _isLoading = true;
   int _currentCarouselIndex = 0;
-
+  Timer? _silenceTimer;
+  Timer? _maxDurationTimer;
+  Timer? _extendTimer;
+  bool _isProcessing = false;
+  String _lastWords = "";
+  int _consecutiveSilenceCount = 0;
+  bool _shouldKeepListening = false;
   // 데이터 상태
   List<VisitHistory> _recentPlaces = [];
   List<RecommendedPlace> _recommendedPlaces = [];
@@ -68,9 +74,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _initializeServices();
     _loadData();
     _initSpeech();
-      _loadUserPreferences(); 
+    _loadUserPreferences();
   }
-    // 사용자 선호도 불러오기
+  // 사용자 선호도 불러오기
   Future<void> _loadUserPreferences() async {
     try {
       final prefProvider = Provider.of<UserPreferenceProvider>(context, listen: false);
@@ -81,16 +87,29 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 새로운 음성 인식 초기화 메소드
   void _initSpeech() async {
     _speechEnabled = await _speechToText.initialize(
       onStatus: (status) {
+        print('Speech status: $status');
+
+        // ✅ 음성 인식이 끝났을 때 자동 처리
         if (status == 'done' || status == 'notListening') {
           setState(() => _isListening = false);
+
+          // 자동 처리 모드이고 텍스트가 있으면 바로 다이얼로그 띄우기
+          if (_autoProcessVoice && _lastRecognizedText.trim().isNotEmpty) {
+            Future.delayed(Duration(milliseconds: 500), () {
+              if (mounted) {
+                _processScheduleVoiceInput(_lastRecognizedText);
+              }
+            });
+          }
         }
       },
       onError: (error) {
         setState(() => _isListening = false);
+        _shouldKeepListening = false;
+        _silenceTimer?.cancel();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('음성 인식 오류: ${error.errorMsg}')),
         );
@@ -98,8 +117,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     setState(() {});
   }
-
-  // 새로운 음성 인식 시작 메소드
   void _startListening() async {
     if (!_speechEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -107,7 +124,17 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
-    setState(() => _isListening = true);
+
+    setState(() {
+      _isListening = true;
+      _shouldKeepListening = true; // ✅ 추가
+      _lastWords = "";
+      _lastRecognizedText = "";
+      _searchController.text = "";
+    });
+
+    _startSilenceTimer();
+
     await _speechToText.listen(
       onResult: (result) {
         setState(() {
@@ -115,40 +142,154 @@ class _HomeScreenState extends State<HomeScreen> {
           _searchController.text = _lastRecognizedText;
         });
 
-        // ✅ 음성 인식이 끝났고, 자동 처리 모드이고, 결과가 있으면 자동으로 처리
-        if (result.finalResult && _autoProcessVoice && result.recognizedWords.isNotEmpty) {
-          Future.delayed(Duration(milliseconds: 500), () {
-            if (mounted) {
-              _processScheduleVoiceInput(result.recognizedWords);
-            }
-          });
+        // final result일 때만 타이머 리셋
+        if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
+          _lastWords = result.recognizedWords;
+          _resetSilenceTimer();
+          print('최종 음성 결과: "${result.recognizedWords}"');
         }
       },
+      listenOptions: SpeechListenOptions(
+        partialResults: false,              // ✅ 새로운 방식
+        listenMode: ListenMode.confirmation,
+        cancelOnError: true,
+        autoPunctuation: true,
+      ),
       localeId: 'ko_KR',
     );
-    // 사용자에게 듣고 있다는 피드백 제공
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
             Icon(Icons.mic, color: Colors.white),
             SizedBox(width: 8),
-            Text(_autoProcessVoice ? '듣고 있습니다... (자동 처리)' : '듣고 있습니다...'),
+            Text('듣고 있습니다... (5초 침묵 시 자동 종료)'),
           ],
         ),
-        duration: Duration(seconds: 1),
-        backgroundColor: _autoProcessVoice ? Colors.green : Colors.blue,
+        duration: Duration(seconds: 2),
+        backgroundColor: Colors.green,
+        action: SnackBarAction(
+          label: '중지',
+          textColor: Colors.white,
+          onPressed: () => _stopListening(),
+        ),
       ),
     );
-
   }
 
-  // 새로운 음성 인식 중지 메소드
-  void _stopListening() async {
+// 실제 음성 인식 시작 (재시작 가능)
+  void _actualStartListening() async {
+    if (!_shouldKeepListening) return;
+
+    try {
+      await _speechToText.listen(
+        onResult: (result) {
+          setState(() {
+            _lastRecognizedText = result.recognizedWords;
+            _searchController.text = _lastRecognizedText;
+          });
+
+          // final result일 때만 타이머 리셋
+          if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
+            _lastWords = result.recognizedWords;
+            _resetSilenceTimer();
+            print('실제 음성 결과: "${result.recognizedWords}"');
+          }
+        },
+        listenOptions: SpeechListenOptions(
+          partialResults: false,              // ✅ 새로운 방식
+          listenMode: ListenMode.confirmation,
+          cancelOnError: true,
+          autoPunctuation: true,
+        ),
+        localeId: 'ko_KR',
+      );
+    } catch (e) {
+      print('음성 인식 시작 오류: $e');
+      // 오류 발생 시 재시작 시도
+      if (_shouldKeepListening) {
+        Future.delayed(Duration(milliseconds: 500), () {
+          if (_shouldKeepListening && mounted) {
+            _restartListening();
+          }
+        });
+      }
+    }
+  }
+
+// 음성 인식 자동 재시작
+  void _restartListening() async {
+    if (!_shouldKeepListening || !mounted) return;
+
+    print('음성 인식 재시작 중...');
+    try {
+      await _speechToText.listen(
+        onResult: (result) {
+          setState(() {
+            _lastRecognizedText = result.recognizedWords;
+            _searchController.text = _lastRecognizedText;
+          });
+
+          // final result일 때만 타이머 리셋
+          if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
+            _lastWords = result.recognizedWords;
+            _resetSilenceTimer();
+            print('재시작 음성 결과: "${result.recognizedWords}"');
+          }
+        },
+        listenOptions: SpeechListenOptions(
+          partialResults: false,              // ✅ 새로운 방식
+          listenMode: ListenMode.confirmation,
+          cancelOnError: true,
+          autoPunctuation: true,
+        ),
+        localeId: 'ko_KR',
+      );
+    } catch (e) {
+      print('음성 인식 재시작 오류: $e');
+    }
+  }
+
+// 5초 침묵 타이머 시작
+  void _startSilenceTimer() {
+    _silenceTimer?.cancel();
+    _silenceTimer = Timer(Duration(seconds: 20), () {
+      if (_isListening) {
+        print('5초 침묵 감지 - 음성 인식 종료');
+        _stopListeningWithCleanup();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('5초 침묵으로 음성 인식이 종료되었습니다'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    });
+  }
+
+// 침묵 타이머 리셋
+  void _resetSilenceTimer() {
+    _silenceTimer?.cancel();
+    _startSilenceTimer();
+  }
+
+// 음성 인식 중지 및 정리
+  void _stopListeningWithCleanup() async {
+    _shouldKeepListening = false; // ✅ 추가
+    _silenceTimer?.cancel();
     await _speechToText.stop();
     setState(() => _isListening = false);
+    print('음성 인식 완전 종료');
   }
 
+
+// 기존 _stopListening 메소드도 업데이트
+  void _stopListening() async {
+    _stopListeningWithCleanup();
+  }
   // 음성으로 인식된 일정 처리 메소드 추가
   // HomeScreen의 _processScheduleVoiceInput 메소드를 이렇게 수정하세요
 
@@ -304,7 +445,13 @@ class _HomeScreenState extends State<HomeScreen> {
     print('User confirmed processing: $shouldProcess'); // 영어 로그
     print('사용자 처리 확인: $shouldProcess'); // 한글 로그
 
-    if (!shouldProcess) return;
+    if (!shouldProcess) {
+      setState(() {
+        _searchController.text = "";
+        _lastRecognizedText = "";
+      });
+      return;
+    }
 
     // 로딩 표시
     showDialog(
@@ -847,99 +994,99 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
 // _loadData 메서드 수정 - 선호 카테고리 기반 추천 추가
   // lib/screens/home/home_screen.dart의 _loadData 메서드 수정
 
-Future<void> _loadData() async {
-  print('Loading home screen data...'); // 영어 로그
-  print('홈 화면 데이터 로드 중...'); // 한글 로그
+  Future<void> _loadData() async {
+    print('Loading home screen data...'); // 영어 로그
+    print('홈 화면 데이터 로드 중...'); // 한글 로그
 
-  setState(() {
-    _isLoading = true;
-  });
+    setState(() {
+      _isLoading = true;
+    });
 
-  try {
-    // 현재 위치 가져오기
-    final locationProvider = Provider.of<LocationProvider>(context, listen: false);
-    final currentLocation = await locationProvider.getCurrentLocation();
-    print('Current location retrieved: ${currentLocation.latitude}, ${currentLocation.longitude}'); // 영어 로그
-    print('현재 위치 정보 획득: ${currentLocation.latitude}, ${currentLocation.longitude}'); // 한글 로그
+    try {
+      // 현재 위치 가져오기
+      final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+      final currentLocation = await locationProvider.getCurrentLocation();
+      print('Current location retrieved: ${currentLocation.latitude}, ${currentLocation.longitude}'); // 영어 로그
+      print('현재 위치 정보 획득: ${currentLocation.latitude}, ${currentLocation.longitude}'); // 한글 로그
 
-    // 최근 방문 장소 불러오기 (최대 5개)
-    _recentPlaces = await _historyService.getRecentlyVisitedPlaces(limit: 5);
-    print('Retrieved ${_recentPlaces.length} recent places'); // 영어 로그
-    print('최근 방문 장소 ${_recentPlaces.length}개 로드 완료'); // 한글 로그
+      // 최근 방문 장소 불러오기 (최대 5개)
+      _recentPlaces = await _historyService.getRecentlyVisitedPlaces(limit: 5);
+      print('Retrieved ${_recentPlaces.length} recent places'); // 영어 로그
+      print('최근 방문 장소 ${_recentPlaces.length}개 로드 완료'); // 한글 로그
 
-    // 카테고리 통계 계산
-    final Map<String, int> categoryCounts = {};
-    final allHistories = await _historyService.getVisitHistories();
-    print('Retrieved ${allHistories.length} visit histories for category analysis'); // 영어 로그
-    print('카테고리 분석을 위해 ${allHistories.length}개의 방문 기록 로드 완료'); // 한글 로그
+      // 카테고리 통계 계산
+      final Map<String, int> categoryCounts = {};
+      final allHistories = await _historyService.getVisitHistories();
+      print('Retrieved ${allHistories.length} visit histories for category analysis'); // 영어 로그
+      print('카테고리 분석을 위해 ${allHistories.length}개의 방문 기록 로드 완료'); // 한글 로그
 
-    for (var history in allHistories) {
-      categoryCounts[history.category] = (categoryCounts[history.category] ?? 0) + 1;
-    }
+      for (var history in allHistories) {
+        categoryCounts[history.category] = (categoryCounts[history.category] ?? 0) + 1;
+      }
 
-    // 상위 인기 카테고리 추출 (내림차순 정렬)
-    List<MapEntry<String, int>> sortedCategories = categoryCounts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+      // 상위 인기 카테고리 추출 (내림차순 정렬)
+      List<MapEntry<String, int>> sortedCategories = categoryCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
 
-    _popularCategories = sortedCategories.take(5).map((e) => e.key).toList();
-    print('Popular categories: $_popularCategories'); // 영어 로그
-    print('인기 카테고리 목록: $_popularCategories'); // 한글 로그
+      _popularCategories = sortedCategories.take(5).map((e) => e.key).toList();
+      print('Popular categories: $_popularCategories'); // 영어 로그
+      print('인기 카테고리 목록: $_popularCategories'); // 한글 로그
 
-    // 사용자 선호 카테고리 가져오기 (새로 추가된 부분)
-    final prefProvider = Provider.of<UserPreferenceProvider>(context, listen: false);
-    final preferredCategories = await prefProvider.getPreferredCategories();
-    print('User preferred categories: ${preferredCategories.join(", ")}'); // 영어 로그
-    print('사용자 선호 카테고리: ${preferredCategories.join(", ")}'); // 한글 로그
+      // 사용자 선호 카테고리 가져오기 (새로 추가된 부분)
+      final prefProvider = Provider.of<UserPreferenceProvider>(context, listen: false);
+      final preferredCategories = await prefProvider.getPreferredCategories();
+      print('User preferred categories: ${preferredCategories.join(", ")}'); // 영어 로그
+      print('사용자 선호 카테고리: ${preferredCategories.join(", ")}'); // 한글 로그
 
-    // 추천 장소 가져오기
-    if (preferredCategories.isNotEmpty) {
-      // 선호 카테고리 기반 추천 (우선순위 1)
-      print('Using preferred categories for recommendations'); // 영어 로그
-      print('선호 카테고리 기반으로 추천 장소 가져오기'); // 한글 로그
-      
-      _recommendedPlaces = await _recommendationService.getHomeScreenRecommendations(
-        currentLocation,
-        limit: 4,
-        radius: 10000, // 반경 10km
-        preferredCategories: preferredCategories,
-      );
-      
-      print('Retrieved ${_recommendedPlaces.length} recommended places based on preferences'); // 영어 로그
-      print('선호 카테고리 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
-    } else if (_recentPlaces.isNotEmpty) {
-      // 방문 기록 기반 추천 (우선순위 2)
-      _recommendedPlaces = await _recommendationService.getRecommendationsBasedOnHistory(
-        currentLocation,
-        limit: 4, // 홈 화면에는 적은 개수만 표시
-        radius: 10000, // 반경 10km
-      );
-      print('Retrieved ${_recommendedPlaces.length} recommended places based on history'); // 영어 로그
-      print('방문 기록 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
-    } else {
-      // 위치 기반 추천 (우선순위 3 - 방문 기록 및 선호 카테고리가 없는 경우)
-      _recommendedPlaces = await _recommendationService.getNearbyPlaces(
-        currentLocation,
-        limit: 4,
-        radius: 5000, // 반경 5km
-      );
-      print('Retrieved ${_recommendedPlaces.length} recommended places based on location'); // 영어 로그
-      print('위치 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
-    }
+      // 추천 장소 가져오기
+      if (preferredCategories.isNotEmpty) {
+        // 선호 카테고리 기반 추천 (우선순위 1)
+        print('Using preferred categories for recommendations'); // 영어 로그
+        print('선호 카테고리 기반으로 추천 장소 가져오기'); // 한글 로그
 
-  } catch (e) {
-    print('Error loading home screen data: $e'); // 영어 로그
-    print('홈 화면 데이터 로드 오류: $e'); // 한글 로그
-    // 오류 메시지를 표시하지 않고 빈 상태로 표시
-  } finally {
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+        _recommendedPlaces = await _recommendationService.getHomeScreenRecommendations(
+          currentLocation,
+          limit: 4,
+          radius: 10000, // 반경 10km
+          preferredCategories: preferredCategories,
+        );
+
+        print('Retrieved ${_recommendedPlaces.length} recommended places based on preferences'); // 영어 로그
+        print('선호 카테고리 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
+      } else if (_recentPlaces.isNotEmpty) {
+        // 방문 기록 기반 추천 (우선순위 2)
+        _recommendedPlaces = await _recommendationService.getRecommendationsBasedOnHistory(
+          currentLocation,
+          limit: 4, // 홈 화면에는 적은 개수만 표시
+          radius: 10000, // 반경 10km
+        );
+        print('Retrieved ${_recommendedPlaces.length} recommended places based on history'); // 영어 로그
+        print('방문 기록 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
+      } else {
+        // 위치 기반 추천 (우선순위 3 - 방문 기록 및 선호 카테고리가 없는 경우)
+        _recommendedPlaces = await _recommendationService.getNearbyPlaces(
+          currentLocation,
+          limit: 4,
+          radius: 5000, // 반경 5km
+        );
+        print('Retrieved ${_recommendedPlaces.length} recommended places based on location'); // 영어 로그
+        print('위치 기반 추천 장소 ${_recommendedPlaces.length}개 로드 완료'); // 한글 로그
+      }
+
+    } catch (e) {
+      print('Error loading home screen data: $e'); // 영어 로그
+      print('홈 화면 데이터 로드 오류: $e'); // 한글 로그
+      // 오류 메시지를 표시하지 않고 빈 상태로 표시
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
-}
 
- @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
@@ -971,7 +1118,7 @@ Future<void> _loadData() async {
       ),
     );
   }
-  
+
   // 한글 인코딩 수정 함수
   String _correctKoreanEncoding(String text) {
     try {
@@ -1342,237 +1489,237 @@ Future<void> _loadData() async {
 
 // 오버플로우 오류 수정을 위한 SizedBox 높이 조정
 // _buildRecentPlaces 메서드에서 수정해야 할 부분
-Widget _buildRecentPlaces() {
-  if (_recentPlaces.isEmpty) {
-    return Container(); // 최근 방문 장소가 없으면 표시하지 않음
+  Widget _buildRecentPlaces() {
+    if (_recentPlaces.isEmpty) {
+      return Container(); // 최근 방문 장소가 없으면 표시하지 않음
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              '최근 방문 장소',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const VisitHistoryScreen(),
+                  ),
+                );
+              },
+              child: const Text(
+                '더보기',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // 높이를 늘려서 오버플로우 오류 해결
+        SizedBox(
+          height: 224, // 기존 200에서 224로 늘림
+          child: PageView.builder(
+            controller: PageController(viewportFraction: 0.85),
+            onPageChanged: (index) {
+              setState(() {
+                _currentCarouselIndex = index % _recentPlaces.length;
+              });
+            },
+            itemBuilder: (context, index) {
+              final realIndex = index % _recentPlaces.length;
+              final place = _recentPlaces[realIndex];
+              return _buildPlaceCard(place);
+            },
+            itemCount: _recentPlaces.length * 100, // 무한 스크롤 효과
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(
+            _recentPlaces.length,
+                (index) => Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _currentCarouselIndex == index
+                    ? Colors.black
+                    : Colors.grey[300],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 32),
+      ],
+    );
   }
 
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text(
-            '최근 방문 장소',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+  Widget _buildPlaceCard(VisitHistory place) {
+    // 카테고리별 색상 지정
+    final Map<String, Color> categoryColors = {
+      '식당': Colors.redAccent.shade100,
+      '카페': Colors.brown.shade200,
+      '쇼핑': Colors.blueAccent.shade100,
+      '관광': Colors.green.shade200,
+      '문화': Colors.purpleAccent.shade100,
+      '병원': Colors.teal.shade200,
+      '편의점': Colors.orange.shade200,
+      '아이스크림 가게': Colors.pink.shade200,
+    };
+
+    // 장소 이름의 첫 글자 가져오기
+    final String initial = place.placeName.isNotEmpty
+        ? place.placeName.substring(0, 1).toUpperCase()
+        : '?';
+
+    // 카테고리에 해당하는 색상 가져오기 (없으면 랜덤 색상)
+    final color = categoryColors[place.category] ??
+        Color((Random().nextDouble() * 0xFFFFFF).toInt() | 0xFF000000).withAlpha(153); // 0.6 * 255 = 153
+
+    return Container(
+      margin: const EdgeInsets.only(right: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(13),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const VisitHistoryScreen(),
+        ],
+      ),
+      child: InkWell(
+        onTap: () {
+          // 장소 상세 정보 또는 내비게이션 화면으로 이동
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 120,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    color.withAlpha(179),
+                    color,
+                  ],
                 ),
-              );
-            },
-            child: const Text(
-              '더보기',
-              style: TextStyle(
-                color: Colors.black,
-                fontWeight: FontWeight.w600,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               ),
-            ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 16),
-      // 높이를 늘려서 오버플로우 오류 해결
-      SizedBox(
-        height: 224, // 기존 200에서 224로 늘림
-        child: PageView.builder(
-          controller: PageController(viewportFraction: 0.85),
-          onPageChanged: (index) {
-            setState(() {
-              _currentCarouselIndex = index % _recentPlaces.length;
-            });
-          },
-          itemBuilder: (context, index) {
-            final realIndex = index % _recentPlaces.length;
-            final place = _recentPlaces[realIndex];
-            return _buildPlaceCard(place);
-          },
-          itemCount: _recentPlaces.length * 100, // 무한 스크롤 효과
-        ),
-      ),
-      const SizedBox(height: 16),
-      Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(
-          _recentPlaces.length,
-              (index) => Container(
-            width: 8,
-            height: 8,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _currentCarouselIndex == index
-                  ? Colors.black
-                  : Colors.grey[300],
-            ),
-          ),
-        ),
-      ),
-      const SizedBox(height: 32),
-    ],
-  );
-}
-
-Widget _buildPlaceCard(VisitHistory place) {
-  // 카테고리별 색상 지정
-  final Map<String, Color> categoryColors = {
-    '식당': Colors.redAccent.shade100,
-    '카페': Colors.brown.shade200,
-    '쇼핑': Colors.blueAccent.shade100,
-    '관광': Colors.green.shade200,
-    '문화': Colors.purpleAccent.shade100,
-    '병원': Colors.teal.shade200,
-    '편의점': Colors.orange.shade200,
-    '아이스크림 가게': Colors.pink.shade200,
-  };
-
-  // 장소 이름의 첫 글자 가져오기
-  final String initial = place.placeName.isNotEmpty 
-      ? place.placeName.substring(0, 1).toUpperCase() 
-      : '?';
-      
-  // 카테고리에 해당하는 색상 가져오기 (없으면 랜덤 색상)
-  final color = categoryColors[place.category] ?? 
-      Color((Random().nextDouble() * 0xFFFFFF).toInt() | 0xFF000000).withAlpha(153); // 0.6 * 255 = 153
-
-   return Container(
-    margin: const EdgeInsets.only(right: 16),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withAlpha(13),
-          blurRadius: 10,
-          offset: const Offset(0, 2),
-        ),
-      ],
-    ),
-    child: InkWell(
-      onTap: () {
-        // 장소 상세 정보 또는 내비게이션 화면으로 이동
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 120,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  color.withAlpha(179),
-                  color,
-                ],
-              ),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // 배경과 대비되는 텍스트 아바타
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withAlpha(204),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        initial,
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: color.withAlpha(230),
-                        ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // 배경과 대비되는 텍스트 아바타
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(204),
+                        shape: BoxShape.circle,
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // 카테고리 아이콘
-                  Icon(
-                    _getCategoryIcon(place.category),
-                    size: 24,
-                    color: Colors.white,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // 텍스트 부분 높이 제한 및 최적화
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min, // 최소 크기로 설정
-                children: [
-                  Text(
-                    place.placeName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.category, size: 14, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
-                      Expanded(
+                      child: Center(
                         child: Text(
-                          place.category,
+                          initial,
                           style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 14,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: color.withAlpha(230),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          _formatDate(place.visitDate),
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 14,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 8),
+                    // 카테고리 아이콘
+                    Icon(
+                      _getCategoryIcon(place.category),
+                      size: 24,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+            // 텍스트 부분 높이 제한 및 최적화
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min, // 최소 크기로 설정
+                  children: [
+                    Text(
+                      place.placeName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.category, size: 14, color: Colors.grey[600]),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            place.category,
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            _formatDate(place.visitDate),
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildRecommendedPlaces() {
     if (_recommendedPlaces.isEmpty) {
@@ -1632,108 +1779,108 @@ Widget _buildPlaceCard(VisitHistory place) {
     );
   }
 
-Widget _buildRecommendedPlaceCard(RecommendedPlace place) {
-  return Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withAlpha(13),
-          blurRadius: 10,
-          offset: const Offset(0, 2),
-        ),
-      ],
-    ),
-    child: InkWell(
-      onTap: () {
-        // 장소 상세 정보 또는 내비게이션 화면으로 이동
-        _navigateToPlaceDetails(place);
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: place.photoUrl.isNotEmpty 
-                  ? ClipRRect(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                      child: Image.network(
-                        place.photoUrl,
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.cover,
-                        // 이미지 로딩 중에 표시할 위젯
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Center(
-                            child: CircularProgressIndicator(
-                              value: loadingProgress.expectedTotalBytes != null
-                                  ? loadingProgress.cumulativeBytesLoaded / 
-                                      loadingProgress.expectedTotalBytes!
-                                  : null,
-                            ),
-                          );
-                        },
-                        // 이미지 로딩 오류 시 표시할 위젯
-                        errorBuilder: (context, error, stackTrace) {
-                          print('이미지 로딩 오류: $error');
-                          return Center(
-                            child: Icon(
-                              _getCategoryIcon(place.category),
-                              size: 32,
-                              color: Colors.black54,
-                            ),
-                          );
-                        },
-                      ),
-                    )
-                  : Center(
-                      child: Icon(
-                        _getCategoryIcon(place.category),
-                        size: 32,
-                        color: Colors.black54,
-                      ),
-                    ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  place.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  place.category,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+  Widget _buildRecommendedPlaceCard(RecommendedPlace place) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(13),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-    ),
-  );
-}
+      child: InkWell(
+        onTap: () {
+          // 장소 상세 정보 또는 내비게이션 화면으로 이동
+          _navigateToPlaceDetails(place);
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                child: place.photoUrl.isNotEmpty
+                    ? ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  child: Image.network(
+                    place.photoUrl,
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: BoxFit.cover,
+                    // 이미지 로딩 중에 표시할 위젯
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Center(
+                        child: CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                              loadingProgress.expectedTotalBytes!
+                              : null,
+                        ),
+                      );
+                    },
+                    // 이미지 로딩 오류 시 표시할 위젯
+                    errorBuilder: (context, error, stackTrace) {
+                      print('이미지 로딩 오류: $error');
+                      return Center(
+                        child: Icon(
+                          _getCategoryIcon(place.category),
+                          size: 32,
+                          color: Colors.black54,
+                        ),
+                      );
+                    },
+                  ),
+                )
+                    : Center(
+                  child: Icon(
+                    _getCategoryIcon(place.category),
+                    size: 32,
+                    color: Colors.black54,
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    place.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    place.category,
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
   Widget _buildPopularCategories() {
     if (_popularCategories.isEmpty) {
       return Container(); // 인기 카테고리가 없으면 표시하지 않음
@@ -1797,196 +1944,196 @@ Widget _buildRecommendedPlaceCard(RecommendedPlace place) {
   }
 
 // _navigateToPlaceDetails 메서드도 업데이트하여 이미지 표시
-void _navigateToPlaceDetails(RecommendedPlace place) async {
-  // 기존 코드...
-  
-  // 모달 바텀 시트 부분에 이미지 표시 추가
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
-    builder: (context) {
-      return Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 이미지가 있으면 표시, 없으면 아이콘 표시
-            if (place.photoUrl.isNotEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  place.photoUrl,
-                  height: 180,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return SizedBox(
-                      height: 180,
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded / 
-                                  loadingProgress.expectedTotalBytes!
-                              : null,
-                        ),
-                      ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      height: 180,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Center(
-                        child: Icon(
-                          _getCategoryIcon(place.category),
-                          size: 48,
-                          color: Colors.black45,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              )
-            else
-              Container(
-                height: 180,
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
+  void _navigateToPlaceDetails(RecommendedPlace place) async {
+    // 기존 코드...
+
+    // 모달 바텀 시트 부분에 이미지 표시 추가
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 이미지가 있으면 표시, 없으면 아이콘 표시
+              if (place.photoUrl.isNotEmpty)
+                ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                ),
-                child: Center(
-                  child: Icon(
-                    _getCategoryIcon(place.category),
-                    size: 48,
-                    color: Colors.black45,
+                  child: Image.network(
+                    place.photoUrl,
+                    height: 180,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return SizedBox(
+                        height: 180,
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                                : null,
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        height: 180,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[200],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            _getCategoryIcon(place.category),
+                            size: 48,
+                            color: Colors.black45,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                )
+              else
+                Container(
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      _getCategoryIcon(place.category),
+                      size: 48,
+                      color: Colors.black45,
+                    ),
                   ),
                 ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      _getCategoryIcon(place.category),
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          place.name,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          place.category,
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
+              const SizedBox(height: 16),
+              Text(
+                place.address,
+                style: const TextStyle(fontSize: 14),
+              ),
+              if (place.reasonForRecommendation.isNotEmpty) ...[
+                const SizedBox(height: 16),
                 Container(
-                  width: 48,
-                  height: 48,
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    _getCategoryIcon(place.category),
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        place.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        place.category,
-                        style: TextStyle(
-                          color: Colors.grey[600],
+                      const Icon(Icons.lightbulb, color: Colors.amber),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          place.reasonForRecommendation,
+                          style: const TextStyle(
+                            color: Colors.black87,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              place.address,
-              style: const TextStyle(fontSize: 14),
-            ),
-            if (place.reasonForRecommendation.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.lightbulb, color: Colors.amber),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        place.reasonForRecommendation,
-                        style: const TextStyle(
-                          color: Colors.black87,
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        // 방문 기록에 추가 (향후 구현)
+                      },
+                      icon: const Icon(Icons.bookmark_border),
+                      label: const Text('저장'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.black,
+                        side: const BorderSide(color: Colors.black),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        // 내비게이션 화면으로 이동 (향후 구현)
+                      },
+                      icon: const Icon(Icons.directions),
+                      label: const Text('길찾기'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      // 방문 기록에 추가 (향후 구현)
-                    },
-                    icon: const Icon(Icons.bookmark_border),
-                    label: const Text('저장'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.black,
-                      side: const BorderSide(color: Colors.black),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      // 내비게이션 화면으로 이동 (향후 구현)
-                    },
-                    icon: const Icon(Icons.directions),
-                    label: const Text('길찾기'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      elevation: 0,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
+          ),
+        );
+      },
+    );
+  }
 
   void _navigateToCategoryPlaces(String category) async {
     try {
@@ -2062,6 +2209,8 @@ void _navigateToPlaceDetails(RecommendedPlace place) async {
 
   @override
   void dispose() {
+    _shouldKeepListening = false;
+    _silenceTimer?.cancel();
     _speechToText.stop();
     super.dispose();
   }
