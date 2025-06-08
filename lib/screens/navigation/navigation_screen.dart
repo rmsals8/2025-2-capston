@@ -245,134 +245,46 @@ class _NavigationScreenState extends State<NavigationScreen> {
     if (_currentLocation == null) return;
 
     try {
-      print('🔍 카카오 API로 현재 위치에서 목적지까지 경로 재계산 시작...');
+      print('🔍 현재 위치 기준으로 경로 조정 시작...');
 
-      final kakaoApiKey = dotenv.env['KAKAO_API_KEY'];
-      if (kakaoApiKey == null || kakaoApiKey.isEmpty) {
-        throw Exception('Kakao API 키 없음');
+      // 🆕 API 재호출하지 말고, 기존 경로에서 현재 위치에 가장 가까운 지점을 찾아서 조정
+      List<LatLng> originalPoints = List.from(widget.route.points);
+
+      if (originalPoints.isEmpty) {
+        // 기존 경로가 없으면 직선 경로
+        setState(() {
+          _currentRoutePoints = [_currentLocation!, widget.destination];
+        });
+        print('🔧 기존 경로 없음, 직선 경로 사용');
+        return;
       }
 
-      // 교통수단별 카카오 API URL 결정
-      String apiUrl;
-      Map<String, dynamic> requestBody;
+      // 현재 위치에서 가장 가까운 기존 경로 지점 찾기
+      int closestIndex = _findClosestPointIndex(originalPoints, _currentLocation!);
 
-      if (widget.transportMode.toLowerCase() == 'walking') {
-        // 🚶‍♂️ 도보 경로
-        apiUrl = 'https://apis-navi.kakaomobility.com/v1/waypoints/directions';
-        requestBody = {
-          'origin': {
-            'x': _currentLocation!.longitude,
-            'y': _currentLocation!.latitude
-          },
-          'destination': {
-            'x': widget.destination.longitude,
-            'y': widget.destination.latitude
-          },
-          'waypoints': [],
-          'priority': 'RECOMMEND',
-          'alternatives': false
-        };
+      // 현재 위치부터 목적지까지의 경로 구성
+      List<LatLng> adjustedRoute = [];
+
+      // 1. 현재 위치 추가
+      adjustedRoute.add(_currentLocation!);
+
+      // 2. 가장 가까운 지점부터 목적지까지의 기존 경로 추가
+      if (closestIndex < originalPoints.length - 1) {
+        adjustedRoute.addAll(originalPoints.sublist(closestIndex + 1));
       } else {
-        // 🚗 자동차 경로
-        apiUrl = 'https://apis-navi.kakaomobility.com/v1/directions';
-        requestBody = {
-          'origin': {
-            'x': _currentLocation!.longitude,
-            'y': _currentLocation!.latitude
-          },
-          'destination': {
-            'x': widget.destination.longitude,
-            'y': widget.destination.latitude
-          },
-          'waypoints': [],
-          'priority': 'RECOMMEND',
-          'car_fuel': 'GASOLINE',
-          'car_hipass': false,
-          'alternatives': false,
-          'road_details': false
-        };
+        // 이미 목적지에 가까우면 직선으로
+        adjustedRoute.add(widget.destination);
       }
 
-      print('📡 카카오 API 요청: $apiUrl');
-      print('📋 요청 데이터: $requestBody');
-
-      final response = await http.post(
-        Uri.parse(apiUrl),
-        headers: {
-          'Authorization': 'KakaoAK $kakaoApiKey',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode(requestBody),
-      );
-
-      print('📡 카카오 응답 상태: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data['routes'] != null && data['routes'].isNotEmpty) {
-          final route = data['routes'][0];
-          final sections = route['sections'] as List? ?? [];
-
-          List<LatLng> newRoutePoints = [];
-
-          // 카카오 API 응답에서 좌표 추출
-          for (var section in sections) {
-            if (section['roads'] != null) {
-              for (var road in section['roads']) {
-                if (road['vertexes'] != null) {
-                  final vertexes = road['vertexes'] as List;
-                  for (int j = 0; j < vertexes.length; j += 2) {
-                    if (j + 1 < vertexes.length) {
-                      newRoutePoints.add(LatLng(
-                        vertexes[j + 1].toDouble(),
-                        vertexes[j].toDouble(),
-                      ));
-                    }
-                  }
-                }
-              }
-            }
-          }
-
-          if (newRoutePoints.isNotEmpty && mounted) {
-            setState(() {
-              _currentRoutePoints = newRoutePoints;
-            });
-            print('✅ 카카오 경로 재계산 완료 - ${newRoutePoints.length}개 포인트');
-          } else {
-            // 포인트가 없으면 직선 경로
-            if (mounted) {
-              setState(() {
-                _currentRoutePoints = [_currentLocation!, widget.destination];
-              });
-              print('🔧 카카오 응답에 포인트 없음, 직선 경로 사용');
-            }
-          }
-        } else {
-          print('❌ 카카오 경로 계산 실패: 응답에 routes 없음');
-          // 직선 경로 폴백
-          if (mounted) {
-            setState(() {
-              _currentRoutePoints = [_currentLocation!, widget.destination];
-            });
-            print('🔧 카카오 실패로 직선 경로 사용');
-          }
-        }
-      } else {
-        print('❌ 카카오 API 호출 실패: ${response.statusCode}');
-        print('❌ 응답 내용: ${response.body}');
-
-        // 직선 경로 폴백
-        if (mounted) {
-          setState(() {
-            _currentRoutePoints = [_currentLocation!, widget.destination];
-          });
-          print('🔧 카카오 API 실패로 직선 경로 사용');
-        }
+      if (mounted) {
+        setState(() {
+          _currentRoutePoints = adjustedRoute;
+        });
+        print('✅ 경로 조정 완료 - ${adjustedRoute.length}개 포인트 (API 재호출 없음)');
       }
+
     } catch (e) {
-      print('❌ 카카오 경로 재계산 오류: $e');
+      print('❌ 경로 조정 오류: $e');
 
       // 예외 발생 시 직선 경로
       if (mounted) {
@@ -384,6 +296,24 @@ class _NavigationScreenState extends State<NavigationScreen> {
     }
   }
 
+// 🆕 현재 위치에서 가장 가까운 경로상의 지점 찾기
+  int _findClosestPointIndex(List<LatLng> routePoints, LatLng currentLocation) {
+    double minDistance = double.infinity;
+    int closestIndex = 0;
+
+    for (int i = 0; i < routePoints.length; i++) {
+      // 🔧 기존 _calculateDistance 메서드 사용 (LatLng 타입으로)
+      double distance = _calculateDistance(currentLocation, routePoints[i]);
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      }
+    }
+
+    print('🎯 가장 가까운 경로 지점: index $closestIndex, 거리 ${minDistance.toStringAsFixed(0)}m');
+    return closestIndex;
+  }
   void _updateCamera() {
     if (_currentLocation != null && _mapController != null) {
       _mapController!.animateCamera(
