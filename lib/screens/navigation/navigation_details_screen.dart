@@ -8,7 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-
+import '../navigation/navigation_screen.dart'; // 🆕 추가
 // 🆕 새로 추가된 import들
 import '../../services/smart_directions_service.dart';
 import '../../services/google_transit_service.dart';
@@ -766,13 +766,23 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
   }
 
   // 🔧 Google API 직접 호출
+// 🔧 Google API 직접 호출 - 현재 위치 기반
   Future<List<RouteInfo>> _tryGoogleAPI(LatLng origin, LatLng destination, String mode) async {
     final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'];
     if (apiKey == null) throw Exception('Google API 키 없음');
 
+    // 🆕 현재 위치가 있으면 현재 위치를 출발점으로 사용
+    LatLng actualOrigin = origin;
+    if (_currentPosition != null) {
+      actualOrigin = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+      print('🎯 Google API - 현재 위치 사용: ${actualOrigin.latitude}, ${actualOrigin.longitude}');
+    } else {
+      print('🎯 Google API - 기존 출발점 사용: ${actualOrigin.latitude}, ${actualOrigin.longitude}');
+    }
+
     final url = Uri.parse(
         'https://maps.googleapis.com/maps/api/directions/json?'
-            'origin=${origin.latitude},${origin.longitude}'
+            'origin=${actualOrigin.latitude},${actualOrigin.longitude}'
             '&destination=${destination.latitude},${destination.longitude}'
             '&mode=$mode'
             '&alternatives=true'
@@ -811,10 +821,20 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
   }
 
   // 🔧 Kakao API 실제 구현
+// 🔧 Kakao API 실제 구현 - 현재 위치 기반
   Future<List<RouteInfo>> _tryKakaoAPI(LatLng origin, LatLng destination) async {
     final kakaoApiKey = dotenv.env['KAKAO_API_KEY'];
     if (kakaoApiKey == null || kakaoApiKey!.isEmpty) {
       throw Exception('Kakao API 키 없음');
+    }
+
+    // 🆕 현재 위치가 있으면 현재 위치를 출발점으로 사용
+    LatLng actualOrigin = origin;
+    if (_currentPosition != null) {
+      actualOrigin = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+      print('🎯 Kakao API - 현재 위치 사용: ${actualOrigin.latitude}, ${actualOrigin.longitude}');
+    } else {
+      print('🎯 Kakao API - 기존 출발점 사용: ${actualOrigin.latitude}, ${actualOrigin.longitude}');
     }
 
     print('🚗 Kakao API 직접 호출 시작...');
@@ -824,8 +844,8 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
     try {
       final requestBody = {
         'origin': {
-          'x': origin.longitude,
-          'y': origin.latitude
+          'x': actualOrigin.longitude,
+          'y': actualOrigin.latitude
         },
         'destination': {
           'x': destination.longitude,
@@ -919,19 +939,28 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       throw Exception('T맵 API 키 없음');
     }
 
+    // 🆕 현재 위치가 있으면 현재 위치를 출발점으로 사용
+    LatLng actualOrigin = origin;
+    if (_currentPosition != null) {
+      actualOrigin = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+      print('🎯 T맵 도보 API - 현재 위치 사용: ${actualOrigin.latitude}, ${actualOrigin.longitude}');
+    } else {
+      print('🎯 T맵 도보 API - 기존 출발점 사용: ${actualOrigin.latitude}, ${actualOrigin.longitude}');
+    }
+
     print('🚶‍♂️ T맵 도보 API 직접 호출 시작...');
 
     final url = Uri.parse('https://apis.openapi.sk.com/tmap/routes/pedestrian');
 
     try {
       final requestBody = {
-        'startX': origin.longitude.toString(),
-        'startY': origin.latitude.toString(),
+        'startX': actualOrigin.longitude.toString(),
+        'startY': actualOrigin.latitude.toString(),
         'endX': destination.longitude.toString(),
         'endY': destination.latitude.toString(),
         'reqCoordType': 'WGS84GEO',
         'resCoordType': 'WGS84GEO',
-        'startName': '출발지',
+        'startName': '현재위치',
         'endName': '목적지'
       };
 
@@ -997,10 +1026,20 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
   }
 
   // 🔧 T맵 자동차 API
+// 🔧 T맵 자동차 API - 현재 위치 기반
   Future<List<RouteInfo>> _tryTmapDrivingAPI(LatLng origin, LatLng destination) async {
     final tmapApiKey = dotenv.env['TMAP_API_KEY'];
     if (tmapApiKey == null || tmapApiKey!.isEmpty) {
       throw Exception('T맵 API 키 없음');
+    }
+
+    // 🆕 현재 위치가 있으면 현재 위치를 출발점으로 사용
+    LatLng actualOrigin = origin;
+    if (_currentPosition != null) {
+      actualOrigin = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+      print('🎯 T맵 자동차 API - 현재 위치 사용: ${actualOrigin.latitude}, ${actualOrigin.longitude}');
+    } else {
+      print('🎯 T맵 자동차 API - 기존 출발점 사용: ${actualOrigin.latitude}, ${actualOrigin.longitude}');
     }
 
     print('🚗 T맵 자동차 API 직접 호출 시작...');
@@ -1009,8 +1048,8 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
 
     try {
       final requestBody = {
-        'startX': origin.longitude.toString(),
-        'startY': origin.latitude.toString(),
+        'startX': actualOrigin.longitude.toString(),
+        'startY': actualOrigin.latitude.toString(),
         'endX': destination.longitude.toString(),
         'endY': destination.latitude.toString(),
         'reqCoordType': 'WGS84GEO',
@@ -1259,7 +1298,129 @@ class _NavigationDetailsScreenState extends State<NavigationDetailsScreen> {
       },
     );
   }
+// 🆕 NavigationScreen으로 이동하는 메서드 (RouteSelectionBottomSheet 로직 재사용)
+  Future<void> _startNavigationFromCurrentLocation() async {
+    if (!mounted) return;
 
+    try {
+      // 위치 권한 확인
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      LatLng origin;
+
+      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+        // 위치 권한이 있으면 현재 위치 사용
+        try {
+          Position currentPosition = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 5),
+          );
+          origin = LatLng(currentPosition.latitude, currentPosition.longitude);
+          print('🎯 현재 위치에서 네비게이션 시작: ${origin.latitude}, ${origin.longitude}');
+
+          // 성공 메시지 표시
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('현재 위치에서 네비게이션을 시작합니다'),
+                duration: Duration(seconds: 2),
+                backgroundColor: _selectedTransportMode.color,
+              ),
+            );
+          }
+        } catch (e) {
+          // 현재 위치 획득 실패 시 기존 경로의 시작점 사용
+          origin = LatLng(_correctedStartLat, _correctedStartLon);
+          print('❌ 현재 위치 획득 실패, 기존 출발점 사용: $e');
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('현재 위치를 가져올 수 없어 기존 출발점에서 시작합니다'),
+                duration: Duration(seconds: 2),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        }
+      } else {
+        // 위치 권한이 없으면 기존 경로의 시작점 사용
+        origin = LatLng(_correctedStartLat, _correctedStartLon);
+        print('🚫 위치 권한 없음, 기존 출발점 사용');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('위치 권한이 없어 기존 출발점에서 시작합니다'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Colors.grey,
+            ),
+          );
+        }
+      }
+
+      // NavigationScreen으로 이동
+      if (_routeOptions.isNotEmpty && mounted) {
+        final selectedRoute = _routeOptions[_selectedRouteIndex];
+        final destination = LatLng(_correctedEndLat, _correctedEndLon);
+
+        // 대중교통인 경우 상세 정보도 함께 전달
+        GoogleTransitRoute? selectedTransitRoute;
+        if (_selectedTransportMode == TransportMode.transit &&
+            _transitRouteDetails.isNotEmpty &&
+            _selectedRouteIndex < _transitRouteDetails.length) {
+          selectedTransitRoute = _transitRouteDetails[_selectedRouteIndex];
+        }
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => NavigationScreen(
+              route: selectedRoute,
+              origin: origin, // 🎯 현재 위치 또는 기존 출발점
+              destination: destination,
+              transportMode: _selectedTransportMode.name,
+              transitRoute: selectedTransitRoute,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('💥 네비게이션 시작 오류: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('네비게이션 시작 중 오류가 발생했습니다: $e'),
+            duration: Duration(seconds: 3),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+
+      // 오류 발생 시 기존 방식으로 실행
+      if (_routeOptions.isNotEmpty && mounted) {
+        final selectedRoute = _routeOptions[_selectedRouteIndex];
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => NavigationScreen(
+              route: selectedRoute,
+              origin: LatLng(_correctedStartLat, _correctedStartLon),
+              destination: LatLng(_correctedEndLat, _correctedEndLon),
+              transportMode: _selectedTransportMode.name,
+              transitRoute: null,
+            ),
+          ),
+        );
+      }
+    }
+  }
   // 🔧 폴백 메서드들
   List<RouteInfo> _createAdditionalRoutes(LatLng origin, LatLng destination) {
     final distance = _calculateDistance(origin.latitude, origin.longitude,

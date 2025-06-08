@@ -96,6 +96,7 @@ class RouteSelectionBottomSheet extends StatelessWidget {
   }
 
   void _startNavigation(BuildContext context, RouteInfo route, int routeIndex) async {
+    print('🔍 _startNavigation 호출됨 - 교통수단: ${transportMode.name}');
     if (!context.mounted) return;
 
     // 현재 위치 권한 및 위치 확인
@@ -139,13 +140,18 @@ class RouteSelectionBottomSheet extends StatelessWidget {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => NavigationScreen(
-            route: route,
-            origin: origin,  // 현재 위치 또는 기존 출발점
-            destination: route.points.last,
-            transportMode: transportMode.name,
-            transitRoute: selectedTransitRoute,
-          ),
+          builder: (context) {
+            print('🚀 NavigationScreen 생성 - origin: ${origin.latitude}, ${origin.longitude}'); // 🆕 디버그
+            print('🚀 NavigationScreen 생성 - destination: ${route.points.last.latitude}, ${route.points.last.longitude}'); // 🆕 디버그
+
+            return NavigationScreen(
+              route: route,
+              origin: origin,  // 현재 위치 또는 기존 출발점
+              destination: route.points.last,
+              transportMode: transportMode.name,
+              transitRoute: selectedTransitRoute,
+            );
+          },
         ),
       );
     } catch (e) {

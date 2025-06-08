@@ -6,7 +6,10 @@ import 'dart:math' show pi, sin, cos, sqrt, atan2;
 import '../../services/location_service.dart';
 import '../../services/google_transit_service.dart';
 import '../../models/route_info.dart';
-
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 class NavigationScreen extends StatefulWidget {
   // 🔧 수정된 생성자 - RouteSelectionBottomSheet와 호환
   final RouteInfo route;
@@ -29,24 +32,134 @@ class NavigationScreen extends StatefulWidget {
 }
 
 class _NavigationScreenState extends State<NavigationScreen> {
+  List<LatLng> _currentRoutePoints = [];
   final LocationService _locationService = LocationService();
-
+  String get apiKey => dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
   GoogleMapController? _mapController;
   LatLng? _currentLocation;
   Timer? _locationTimer;
   int _currentStepIndex = 0;
   bool _isNavigating = false;
-
+  RouteInfo? _currentRoute;  // late 제거하고 nullable로 변경
   List<TransitStep> _transitSteps = [];
   GoogleTransitRoute? _detailedTransitRoute;
 
   @override
   void initState() {
     super.initState();
+    print('🎯 NavigationScreen initState - 전달받은 origin: ${widget.origin?.latitude}, ${widget.origin?.longitude}'); // 🆕 디버그
+    print('🎯 NavigationScreen initState - 전달받은 destination: ${widget.destination.latitude}, ${widget.destination.longitude}'); // 🆕 디버그
+    // 🆕 초기 경로 포인트 설정
+    _currentRoutePoints = List.from(widget.route.points);
+    // 🆕 전달받은 origin을 먼저 현재 위치로 설정
+    if (widget.origin != null) {
+      _currentLocation = widget.origin;
+      print('🎯 초기 현재 위치 설정: ${widget.origin!.latitude}, ${widget.origin!.longitude}');
+    }
     _loadTransitData();
     _startNavigation();
+    _getCurrentLocationAndStart();
   }
+  Future<void> _getCurrentLocationAndStart() async {
+    try {
+      final position = await _locationService.getCurrentLocation();
+      final currentLocation = LatLng(position.latitude, position.longitude);
 
+      setState(() {
+        _currentLocation = currentLocation;
+      });
+
+      print('현재 위치에서 네비게이션 시작: ${currentLocation.latitude}, ${currentLocation.longitude}');
+
+      // 현재 위치에서 목적지까지 새로운 경로 요청
+      await _recalculateRouteFromCurrentLocation(currentLocation);
+
+    } catch (e) {
+      print('현재 위치 획득 실패, 기본 출발점 사용: $e');
+      setState(() {
+        _currentLocation = widget.origin;
+      });
+    } finally {
+      _startNavigation();
+    }
+  }
+  Future<void> _recalculateRouteFromCurrentLocation(LatLng currentLocation) async {
+    try {
+      print('🔍 현재 위치에서 목적지까지 경로 재계산 시작...');
+
+      // Google Directions API 모드 설정
+      String mode;
+      switch (widget.transportMode.toLowerCase()) {
+        case 'walking':
+        case 'walk':
+          mode = 'walking';
+          break;
+        case 'transit':
+        case 'publictransport':
+          mode = 'transit';
+          break;
+        case 'driving':
+        case 'car':
+        default:
+          mode = 'driving';
+          break;
+      }
+
+      // API 요청 URL 구성
+      final url = Uri.parse(
+          'https://maps.googleapis.com/maps/api/directions/json?'
+              'origin=${currentLocation.latitude.toStringAsFixed(6)},${currentLocation.longitude.toStringAsFixed(6)}'
+              '&destination=${widget.destination.latitude.toStringAsFixed(6)},${widget.destination.longitude.toStringAsFixed(6)}'
+              '&mode=$mode'
+              '&language=ko'
+              '&key=$apiKey'
+      );
+
+      print('📡 API 요청: $url');
+
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(utf8.decode(response.bodyBytes));
+
+        if (data['status'] == 'OK' && data['routes'].isNotEmpty) {
+          // 새로운 경로 포인트 파싱
+          PolylinePoints polylinePoints = PolylinePoints();
+          List<PointLatLng> decodedPolyline = polylinePoints.decodePolyline(
+              data['routes'][0]['overview_polyline']['points']
+          );
+
+          List<LatLng> newRoutePoints = decodedPolyline
+              .map((point) => LatLng(point.latitude, point.longitude))
+              .toList();
+
+          // 거리와 시간 정보 추출
+          final leg = data['routes'][0]['legs'][0];
+          final newDistance = leg['distance']['text'];
+          final newDuration = leg['duration']['text'];
+
+          setState(() {
+            _currentRoute = widget.route.copyWith(
+              points: newRoutePoints,
+              distance: newDistance,
+              duration: newDuration,
+            );
+          });
+
+          print('✅ 경로 재계산 완료: $newDistance, $newDuration');
+          print('📍 새로운 경로 포인트 ${newRoutePoints.length}개 생성');
+
+        } else {
+          print('❌ Google API 응답 오류: ${data['status']}');
+        }
+      } else {
+        print('❌ HTTP 요청 실패: ${response.statusCode}');
+      }
+
+    } catch (e) {
+      print('❌ 경로 재계산 실패: $e');
+    }
+  }
   Future<void> _loadTransitData() async {
     if (_isTransitMode) {
       if (widget.transitRoute != null) {
@@ -66,9 +179,19 @@ class _NavigationScreenState extends State<NavigationScreen> {
           widget.transportMode.toLowerCase() == 'publictransport';
 
   void _startNavigation() {
+    // 전달받은 origin을 현재 위치로 우선 설정
+    if (widget.origin != null && _currentLocation == null) {
+      _currentLocation = widget.origin;
+      print('🎯 네비게이션 시작 - 현재 위치 설정: ${widget.origin!.latitude}, ${widget.origin!.longitude}');
+    }
+
     setState(() {
       _isNavigating = true;
     });
+
+    // 🆕 즉시 경로 재계산
+    _recalculateRoute();
+
     _locationTimer = Timer.periodic(
       const Duration(seconds: 5),
           (_) => _updateCurrentLocation(),
@@ -95,12 +218,169 @@ class _NavigationScreenState extends State<NavigationScreen> {
         _currentLocation = LatLng(position.latitude, position.longitude);
       });
 
-      if (_isNavigating) {
+      // 🆕 현재 위치가 변경되면 경로를 다시 계산
+      if (_isNavigating && _currentLocation != null) {
+        await _recalculateRoute();
         _updateCamera();
         _checkArrival();
       }
     } catch (e) {
       print('위치 업데이트 실패: $e');
+
+      // 위치 서비스 실패 시 전달받은 origin 사용
+      if (widget.origin != null && _currentLocation == null) {
+        setState(() {
+          _currentLocation = widget.origin;
+        });
+        print('🎯 전달받은 origin을 현재 위치로 설정: ${widget.origin!.latitude}, ${widget.origin!.longitude}');
+
+        // 🆕 초기 경로 계산
+        if (_isNavigating) {
+          await _recalculateRoute();
+        }
+      }
+    }
+  }
+  Future<void> _recalculateRoute() async {
+    if (_currentLocation == null) return;
+
+    try {
+      print('🔍 카카오 API로 현재 위치에서 목적지까지 경로 재계산 시작...');
+
+      final kakaoApiKey = dotenv.env['KAKAO_API_KEY'];
+      if (kakaoApiKey == null || kakaoApiKey.isEmpty) {
+        throw Exception('Kakao API 키 없음');
+      }
+
+      // 교통수단별 카카오 API URL 결정
+      String apiUrl;
+      Map<String, dynamic> requestBody;
+
+      if (widget.transportMode.toLowerCase() == 'walking') {
+        // 🚶‍♂️ 도보 경로
+        apiUrl = 'https://apis-navi.kakaomobility.com/v1/waypoints/directions';
+        requestBody = {
+          'origin': {
+            'x': _currentLocation!.longitude,
+            'y': _currentLocation!.latitude
+          },
+          'destination': {
+            'x': widget.destination.longitude,
+            'y': widget.destination.latitude
+          },
+          'waypoints': [],
+          'priority': 'RECOMMEND',
+          'alternatives': false
+        };
+      } else {
+        // 🚗 자동차 경로
+        apiUrl = 'https://apis-navi.kakaomobility.com/v1/directions';
+        requestBody = {
+          'origin': {
+            'x': _currentLocation!.longitude,
+            'y': _currentLocation!.latitude
+          },
+          'destination': {
+            'x': widget.destination.longitude,
+            'y': widget.destination.latitude
+          },
+          'waypoints': [],
+          'priority': 'RECOMMEND',
+          'car_fuel': 'GASOLINE',
+          'car_hipass': false,
+          'alternatives': false,
+          'road_details': false
+        };
+      }
+
+      print('📡 카카오 API 요청: $apiUrl');
+      print('📋 요청 데이터: $requestBody');
+
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {
+          'Authorization': 'KakaoAK $kakaoApiKey',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(requestBody),
+      );
+
+      print('📡 카카오 응답 상태: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['routes'] != null && data['routes'].isNotEmpty) {
+          final route = data['routes'][0];
+          final sections = route['sections'] as List? ?? [];
+
+          List<LatLng> newRoutePoints = [];
+
+          // 카카오 API 응답에서 좌표 추출
+          for (var section in sections) {
+            if (section['roads'] != null) {
+              for (var road in section['roads']) {
+                if (road['vertexes'] != null) {
+                  final vertexes = road['vertexes'] as List;
+                  for (int j = 0; j < vertexes.length; j += 2) {
+                    if (j + 1 < vertexes.length) {
+                      newRoutePoints.add(LatLng(
+                        vertexes[j + 1].toDouble(),
+                        vertexes[j].toDouble(),
+                      ));
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          if (newRoutePoints.isNotEmpty && mounted) {
+            setState(() {
+              _currentRoutePoints = newRoutePoints;
+            });
+            print('✅ 카카오 경로 재계산 완료 - ${newRoutePoints.length}개 포인트');
+          } else {
+            // 포인트가 없으면 직선 경로
+            if (mounted) {
+              setState(() {
+                _currentRoutePoints = [_currentLocation!, widget.destination];
+              });
+              print('🔧 카카오 응답에 포인트 없음, 직선 경로 사용');
+            }
+          }
+        } else {
+          print('❌ 카카오 경로 계산 실패: 응답에 routes 없음');
+          // 직선 경로 폴백
+          if (mounted) {
+            setState(() {
+              _currentRoutePoints = [_currentLocation!, widget.destination];
+            });
+            print('🔧 카카오 실패로 직선 경로 사용');
+          }
+        }
+      } else {
+        print('❌ 카카오 API 호출 실패: ${response.statusCode}');
+        print('❌ 응답 내용: ${response.body}');
+
+        // 직선 경로 폴백
+        if (mounted) {
+          setState(() {
+            _currentRoutePoints = [_currentLocation!, widget.destination];
+          });
+          print('🔧 카카오 API 실패로 직선 경로 사용');
+        }
+      }
+    } catch (e) {
+      print('❌ 카카오 경로 재계산 오류: $e');
+
+      // 예외 발생 시 직선 경로
+      if (mounted) {
+        setState(() {
+          _currentRoutePoints = [_currentLocation!, widget.destination];
+        });
+        print('🔧 예외 발생으로 직선 경로 사용');
+      }
     }
   }
 
@@ -110,8 +390,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
         CameraUpdate.newCameraPosition(
           CameraPosition(
             target: _currentLocation!,
-            zoom: _isTransitMode ? 15 : 17,
-            tilt: _isTransitMode ? 0 : 45,
+            zoom: _isTransitMode ? 13 : 14,  // 14→13, 17→14 (줌 아웃)
+            tilt: _isTransitMode ? 0 : 30,   // 45→30 (틸트 줄임)
           ),
         ),
       );
@@ -326,26 +606,27 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   Set<Polyline> _getTransitPolylines() {
     Set<Polyline> polylines = {};
+    final route = _currentRoute ?? widget.route;  // 추가
 
     polylines.add(Polyline(
       polylineId: PolylineId('base_route'),
-      points: widget.route.points,
+      points: route.points,  // _currentRoute → route
       color: Colors.grey.withOpacity(0.6),
       width: 3,
     ));
 
-    if (!_isTransitMode || _transitSteps.isEmpty || widget.route.points.isEmpty) {
+    if (!_isTransitMode || _transitSteps.isEmpty || route.points.isEmpty) {
       polylines.clear();
       polylines.add(Polyline(
         polylineId: PolylineId('main_route'),
-        points: widget.route.points,
+        points: route.points,  // _currentRoute → route
         color: _getRouteColor(),
         width: 6,
       ));
       return polylines;
     }
 
-    final segmentSize = widget.route.points.length ~/ _transitSteps.length;
+    final segmentSize = route.points.length ~/ _transitSteps.length;  // _currentRoute → route
 
     for (int i = 0; i < _transitSteps.length; i++) {
       final step = _transitSteps[i];
@@ -354,12 +635,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
         final startIndex = i * segmentSize;
         final endIndex = (i + 1) * segmentSize;
 
-        if (startIndex < widget.route.points.length) {
-          final segmentEndIndex = endIndex < widget.route.points.length
+        if (startIndex < route.points.length) {  // _currentRoute → route
+          final segmentEndIndex = endIndex < route.points.length
               ? endIndex
-              : widget.route.points.length;
+              : route.points.length;
 
-          final segmentPoints = widget.route.points.sublist(startIndex, segmentEndIndex);
+          final segmentPoints = route.points.sublist(startIndex, segmentEndIndex);  // _currentRoute → route
 
           if (segmentPoints.isNotEmpty) {
             polylines.add(Polyline(
@@ -655,6 +936,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
   }
 
   Widget _buildBottomInfoPanel() {
+    final route = _currentRoute ?? widget.route;  // null이면 widget.route 사용
+
     return Card(
       margin: EdgeInsets.all(16),
       child: Padding(
@@ -670,7 +953,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.route.distance,
+                        route.distance,  // _currentRoute → route
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -678,7 +961,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        widget.route.duration,
+                        route.duration,  // _currentRoute → route
                         style: TextStyle(
                           fontSize: 16,
                           color: Colors.blue,
@@ -757,8 +1040,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: widget.origin,
-              zoom: _isTransitMode ? 14 : 17,
-              tilt: _isTransitMode ? 0 : 45,
+              zoom: _isTransitMode ? 12 : 13,
+              tilt: _isTransitMode ? 0 : 30,
             ),
             onMapCreated: (controller) {
               _mapController = controller;
@@ -771,7 +1054,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
             polylines: _isTransitMode ? _getTransitPolylines() : {
               Polyline(
                 polylineId: PolylineId('navigation_route'),
-                points: widget.route.points,
+                points: _currentRoutePoints.isNotEmpty ? _currentRoutePoints : widget.route.points, // 🎯 수정
                 color: _getRouteColor(),
                 width: 6,
               ),
