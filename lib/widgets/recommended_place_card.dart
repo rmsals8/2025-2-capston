@@ -4,11 +4,15 @@ import '../models/recommended_place.dart';
 import '../models/visit_history.dart';
 import '../services/visit_history_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+// ✨ 새로 추가된 import들 (네비게이션용)
+import 'package:provider/provider.dart';
+import '../providers/location_provider.dart';
+import '../screens/navigation/navigation_details_screen.dart';
 
 class RecommendedPlaceCard extends StatelessWidget {
   final RecommendedPlace place;
   final VoidCallback? onTap;
-  final VoidCallback? onNavigate;
+  final VoidCallback? onNavigate; // 이제 사용하지 않지만 호환성을 위해 유지
   final bool showDistance;
 
   const RecommendedPlaceCard({
@@ -185,19 +189,18 @@ class RecommendedPlaceCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // 내비게이션 버튼
-                  if (onNavigate != null)
-                    TextButton.icon(
-                      onPressed: onNavigate,
-                      icon: const Icon(Icons.directions, size: 18),
-                      label: const Text('길찾기'),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
+                  // ✨ 수정된 내비게이션 버튼
+                  TextButton.icon(
+                    onPressed: () => _startNavigation(context),
+                    icon: const Icon(Icons.directions, size: 18),
+                    label: const Text('길찾기'),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
                       ),
                     ),
+                  ),
                 ],
               ),
             ],
@@ -205,6 +208,67 @@ class RecommendedPlaceCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // ✨ 새로 추가된 메서드: 네비게이션 시작
+  Future<void> _startNavigation(BuildContext context) async {
+    try {
+      // 현재 위치 가져오기
+      final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+      LatLng currentLocation;
+      
+      try {
+        final location = await locationProvider.getCurrentLocation();
+        currentLocation = location;
+        print('현재 위치에서 네비게이션 시작: ${currentLocation.latitude}, ${currentLocation.longitude}');
+      } catch (e) {
+        // 현재 위치를 가져올 수 없으면 기본 위치 사용 (울산)
+        currentLocation = LatLng(35.5384, 129.2582);
+        print('현재 위치 가져오기 실패, 기본 위치 사용: $e');
+        
+        // 사용자에게 알림
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('현재 위치를 가져올 수 없어 기본 위치에서 시작합니다'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+
+      // NavigationDetailsScreen으로 이동
+      if (context.mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => NavigationDetailsScreen(
+              startLat: currentLocation.latitude,
+              startLon: currentLocation.longitude,
+              endLat: place.latitude,
+              endLon: place.longitude,
+              startName: '현재 위치',
+              endName: place.name,
+              transportMode: 'driving', // 기본값으로 자동차 설정
+            ),
+          ),
+        );
+        
+        print('NavigationDetailsScreen으로 이동: ${place.name}');
+      }
+    } catch (e) {
+      print('네비게이션 시작 오류: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('길찾기를 시작할 수 없습니다: $e'),
+            duration: Duration(seconds: 3),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   // 카테고리에 맞는 아이콘 반환

@@ -8,6 +8,9 @@ import '../screens/navigation/navigation_screen.dart';
 import '../services/visit_history_service.dart';
 import 'dart:math' as math;
 import '../models/route_info.dart';
+import 'package:provider/provider.dart';
+import '../providers/location_provider.dart';
+import 'navigation/navigation_details_screen.dart';
 class PlaceRecommendationsScreen extends StatefulWidget {
   final LatLng currentLocation;
   final String title;
@@ -646,31 +649,31 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
                     children: [
                       // 내비게이션 버튼
                       ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _navigateToPlace(place);
-                        },
-                        icon: const Icon(Icons.navigation),
-                        label: const Text(
-                          '길찾기',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                            onPressed: () {
+                              Navigator.pop(context); // 바텀 시트 닫기
+                              _navigateToPlace(place); // 수정된 네비게이션 메서드 호출
+                            },
+                            icon: const Icon(Icons.navigation),
+                            label: const Text(
+                              '길찾기',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.black,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              elevation: 0,
+                            ),
                           ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.black,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          elevation: 0,
-                        ),
-                      ),
 
                       // 저장 버튼
                       OutlinedButton.icon(
@@ -804,32 +807,71 @@ class _PlaceRecommendationsScreenState extends State<PlaceRecommendationsScreen>
     );
   }
 
-  void _navigateToPlace(RecommendedPlace place) {
-    // 🔧 NavigationScreen에 맞는 형식으로 RouteInfo 생성
-    final origin = widget.currentLocation;
-    final destination = LatLng(place.latitude, place.longitude);
+// 기존 _navigateToPlace 메서드를 이것으로 완전히 교체하세요
+void _navigateToPlace(RecommendedPlace place) async {
+  try {
+    print('길찾기 시작: ${place.name}으로 이동');
+    
+    // 현재 위치 가져오기
+    final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+    LatLng currentLocation;
+    
+    try {
+      final location = await locationProvider.getCurrentLocation();
+      currentLocation = location;
+      print('현재 위치: ${currentLocation.latitude}, ${currentLocation.longitude}');
+    } catch (e) {
+      // 현재 위치를 가져올 수 없으면 widget의 currentLocation 사용
+      currentLocation = widget.currentLocation;
+      print('현재 위치 가져오기 실패, 기본 위치 사용: $e');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('현재 위치를 가져올 수 없어 기본 위치에서 시작합니다'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
 
-    // 간단한 RouteInfo 객체 생성 (직선 경로)
-    final routeInfo = RouteInfo(
-      points: [origin, destination], // 출발지 → 목적지 직선 경로
-      distance: '${_calculateDistance(origin, destination).toStringAsFixed(1)} km',
-      duration: '예상 ${(_calculateEstimatedTime(origin, destination)).round()}분',
-      samplePoints: [origin, destination], // 샘플 포인트
-    );
+    print('목적지: ${place.latitude}, ${place.longitude}');
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => NavigationScreen(
-          route: routeInfo,           // ✅ RouteInfo 객체
-          origin: origin,             // ✅ 출발지 LatLng
-          destination: destination,   // ✅ 도착지 LatLng
-          transportMode: 'driving',   // ✅ 교통수단 (소문자)
-          transitRoute: null,         // ✅ 대중교통 정보 (없음)
+    // NavigationDetailsScreen으로 이동
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => NavigationDetailsScreen(
+            startLat: currentLocation.latitude,
+            startLon: currentLocation.longitude,
+            endLat: place.latitude,
+            endLon: place.longitude,
+            startName: '현재 위치',
+            endName: place.name,
+            transportMode: 'driving', // 기본값으로 자동차 설정
+          ),
         ),
-      ),
-    );
+      );
+      
+      print('NavigationDetailsScreen으로 이동 완료');
+    }
+    
+  } catch (e) {
+    print('길찾기 시작 오류: $e');
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('길찾기를 시작할 수 없습니다: $e'),
+          duration: Duration(seconds: 3),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
+}
 
   double _calculateDistance(LatLng start, LatLng end) {
     const double earthRadius = 6371; // 지구 반지름 (km)

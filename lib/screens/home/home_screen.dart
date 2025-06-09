@@ -2019,9 +2019,22 @@ Future<void> _saveToVisitHistory(RecommendedPlace place) async {
   }
 }
 // _navigateToPlaceDetails 메서드도 업데이트하여 이미지 표시
+// home_screen.dart에서 _navigateToPlaceDetails 메서드를 이것으로 교체하세요
 void _navigateToPlaceDetails(RecommendedPlace place) async {
-  print('장소 상세 정보 표시: ${place.name}');
+  // 현재 위치를 가져옵니다
+  final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+  LatLng currentLocation;
   
+  try {
+    final location = await locationProvider.getCurrentLocation();
+    currentLocation = location;
+  } catch (e) {
+    // 현재 위치를 가져올 수 없으면 기본 위치 사용
+    currentLocation = LatLng(35.5384, 129.2582); // 울산 기본 좌표
+    print('현재 위치 가져오기 실패, 기본 위치 사용: $e');
+  }
+
+  // 모달 바텀 시트로 장소 상세 정보 표시
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -2059,7 +2072,6 @@ void _navigateToPlaceDetails(RecommendedPlace place) async {
                     );
                   },
                   errorBuilder: (context, error, stackTrace) {
-                    print('이미지 로딩 오류: $error');
                     return Container(
                       height: 180,
                       decoration: BoxDecoration(
@@ -2093,8 +2105,6 @@ void _navigateToPlaceDetails(RecommendedPlace place) async {
                 ),
               ),
             const SizedBox(height: 16),
-            
-            // 장소 정보 섹션
             Row(
               children: [
                 Container(
@@ -2133,51 +2143,10 @@ void _navigateToPlaceDetails(RecommendedPlace place) async {
               ],
             ),
             const SizedBox(height: 16),
-            
-            // 주소 정보
             Text(
               place.address,
               style: const TextStyle(fontSize: 14),
             ),
-            
-            // 평점 정보 (있으면 표시)
-            if (place.rating > 0) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.star, color: Colors.amber, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${place.rating.toStringAsFixed(1)}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            
-            // 거리 정보
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.location_on, color: Colors.blue, size: 16),
-                const SizedBox(width: 4),
-                Text(
-                  place.distance < 1000
-                      ? '${place.distance.toInt()}m'
-                      : '${(place.distance / 1000).toStringAsFixed(1)}km',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.blue,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-            
-            // 추천 이유 (있으면 표시)
             if (place.reasonForRecommendation.isNotEmpty) ...[
               const SizedBox(height: 16),
               Container(
@@ -2202,19 +2171,16 @@ void _navigateToPlaceDetails(RecommendedPlace place) async {
                 ),
               ),
             ],
-            
             const SizedBox(height: 24),
-            
-            // 하단 버튼들
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // 저장 버튼
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () {
+                    onPressed: () async {
                       Navigator.pop(context);
-                      _saveToVisitHistory(place); // 방문 기록에 추가 함수 호출
+                      // 방문 기록에 추가
+                      await _addToVisitHistory(place);
                     },
                     icon: const Icon(Icons.bookmark_border),
                     label: const Text('저장'),
@@ -2229,13 +2195,25 @@ void _navigateToPlaceDetails(RecommendedPlace place) async {
                   ),
                 ),
                 const SizedBox(width: 16),
-                
-                // 길찾기 버튼 (수정된 부분)
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      Navigator.pop(context); // 바텀 시트 닫기
-                      _startNavigationToPlace(place); // 길찾기 시작
+                      Navigator.pop(context);
+                      // ✨ 여기가 핵심! NavigationDetailsScreen으로 이동
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => NavigationDetailsScreen(
+                            startLat: currentLocation.latitude,
+                            startLon: currentLocation.longitude,
+                            endLat: place.latitude,
+                            endLon: place.longitude,
+                            startName: '현재 위치',
+                            endName: place.name,
+                            transportMode: 'driving', // 기본값으로 자동차 설정
+                          ),
+                        ),
+                      );
                     },
                     icon: const Icon(Icons.directions),
                     label: const Text('길찾기'),
@@ -2258,31 +2236,65 @@ void _navigateToPlaceDetails(RecommendedPlace place) async {
     },
   );
 }
-  void _navigateToCategoryPlaces(String category) async {
-    try {
-      final locationProvider = Provider.of<LocationProvider>(context, listen: false);
-      final currentLocation = await locationProvider.getCurrentLocation();
 
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PlaceRecommendationsScreen(
-              currentLocation: currentLocation,
-              title: '$category 추천',
-              category: category,
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('추천 화면을 열 수 없습니다: $e')),
-        );
-      }
+// 방문 기록 추가 헬퍼 메서드
+Future<void> _addToVisitHistory(RecommendedPlace place) async {
+  try {
+    final visitHistoryService = VisitHistoryService();
+
+    await visitHistoryService.addVisitHistory(
+        place.name,
+        place.id,
+        place.category,
+        place.latitude,
+        place.longitude,
+        place.address
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('방문 장소로 저장되었습니다'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('저장 실패: $e'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
+}
+void _navigateToCategoryPlaces(String category) async {
+  try {
+    final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+    final currentLocation = await locationProvider.getCurrentLocation();
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PlaceRecommendationsScreen(
+            currentLocation: currentLocation,
+            title: '$category 추천',
+            category: category,
+          ),
+        ),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('추천 화면을 열 수 없습니다: $e')),
+      );
+    }
+  }
+}
 
   IconData _getCategoryIcon(String category) {
     final lowerCategory = category.toLowerCase();
