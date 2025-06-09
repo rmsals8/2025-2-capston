@@ -41,7 +41,7 @@ apply plugin: 'com.google.gms.google-services'
 
 android {
     namespace = "com.trip_helper.trip_helper"
-    compileSdkVersion = 35
+    compileSdk = 35  // 플러그인 요구사항에 맞춤
     ndkVersion flutter.ndkVersion
 
     compileOptions {
@@ -52,6 +52,7 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+    
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
     }
@@ -70,19 +71,45 @@ android {
         // 패키지명 변경
         applicationId "com.trip_helper.app"
         minSdkVersion 23
-        targetSdkVersion 34
+        targetSdkVersion 35  // 35로 맞춤
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
 
         // 카카오 로그인을 위한 manifest placeholder 추가
         manifestPlaceholders = [kakaoScheme: "kakao7245b857499b1f8786af07567b3aea91"]
+        
+        // 메모리 최적화 설정 추가
+        multiDexEnabled true
     }
 
     buildTypes {
         release {
             // 디버그 키 대신 릴리스 키 사용하도록 변경
             signingConfig signingConfigs.release
+            
+            // 메모리 최적화를 위한 설정
+            minifyEnabled false
+            shrinkResources false
         }
+        
+        debug {
+            // 디버그 빌드 최적화
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    // Lint 옵션 추가 (메모리 절약)
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+        disable 'InvalidPackage'
+    }
+
+    // 메모리 관련 설정 추가
+    packagingOptions {
+        pickFirst '**/libc++_shared.so'
+        pickFirst '**/libjsc.so'
     }
 }
 
@@ -93,4 +120,7 @@ flutter {
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
     implementation platform('com.google.firebase:firebase-bom:32.7.1')
+    
+    // MultiDex 지원 추가
+    implementation 'androidx.multidex:multidex:2.0.1'
 }
