@@ -1,5 +1,7 @@
 // lib/screens/home/home_screen.dart
 import 'dart:math';
+import 'package:trip_helper/screens/navigation/navigation_details_screen.dart';
+
 import '../schedule/multiple_options_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -1942,12 +1944,97 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
       ),
     );
   }
+  Future<void> _startNavigationToPlace(RecommendedPlace place) async {
+    try {
+      // 1. 현재 위치 가져오기
+      final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+      final currentLocation = await locationProvider.getCurrentLocation();
 
+      // 2. 목적지 좌표 설정
+      final destination = LatLng(place.latitude, place.longitude);
+
+      // 3. NavigationDetailsScreen으로 이동
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => NavigationDetailsScreen(
+            startLat: currentLocation.latitude,
+            startLon: currentLocation.longitude,
+            endLat: place.latitude,
+            endLon: place.longitude,
+            startName: '현재 위치',
+            endName: place.name,
+            transportMode: 'driving', // 기본값을 자동차로 설정
+          ),
+        ),
+      );
+
+    } catch (e) {
+      // 4. 오류 처리
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('길찾기를 시작할 수 없습니다: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _saveToVisitHistory(RecommendedPlace place) async {
+    try {
+      print('방문 기록에 저장: ${place.name}');
+
+      // VisitHistoryService를 사용해서 저장
+      await _historyService.addVisitHistory(
+        place.name,
+        place.id,
+        place.category,
+        place.latitude,
+        place.longitude,
+        place.address,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${place.name}이(가) 방문 장소로 저장되었습니다'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+    } catch (e) {
+      print('저장 오류: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('저장 실패: $e'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 // _navigateToPlaceDetails 메서드도 업데이트하여 이미지 표시
+// home_screen.dart에서 _navigateToPlaceDetails 메서드를 이것으로 교체하세요
   void _navigateToPlaceDetails(RecommendedPlace place) async {
-    // 기존 코드...
+    // 현재 위치를 가져옵니다
+    final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+    LatLng currentLocation;
 
-    // 모달 바텀 시트 부분에 이미지 표시 추가
+    try {
+      final location = await locationProvider.getCurrentLocation();
+      currentLocation = location;
+    } catch (e) {
+      // 현재 위치를 가져올 수 없으면 기본 위치 사용
+      currentLocation = LatLng(35.5384, 129.2582); // 울산 기본 좌표
+      print('현재 위치 가져오기 실패, 기본 위치 사용: $e');
+    }
+
+    // 모달 바텀 시트로 장소 상세 정보 표시
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2090,9 +2177,10 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () {
+                      onPressed: () async {
                         Navigator.pop(context);
-                        // 방문 기록에 추가 (향후 구현)
+                        // 방문 기록에 추가
+                        await _addToVisitHistory(place);
                       },
                       icon: const Icon(Icons.bookmark_border),
                       label: const Text('저장'),
@@ -2111,7 +2199,21 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
                     child: ElevatedButton.icon(
                       onPressed: () {
                         Navigator.pop(context);
-                        // 내비게이션 화면으로 이동 (향후 구현)
+                        // ✨ 여기가 핵심! NavigationDetailsScreen으로 이동
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => NavigationDetailsScreen(
+                              startLat: currentLocation.latitude,
+                              startLon: currentLocation.longitude,
+                              endLat: place.latitude,
+                              endLon: place.longitude,
+                              startName: '현재 위치',
+                              endName: place.name,
+                              transportMode: 'driving', // 기본값으로 자동차 설정
+                            ),
+                          ),
+                        );
                       },
                       icon: const Icon(Icons.directions),
                       label: const Text('길찾기'),
@@ -2135,6 +2237,39 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
     );
   }
 
+// 방문 기록 추가 헬퍼 메서드
+  Future<void> _addToVisitHistory(RecommendedPlace place) async {
+    try {
+      final visitHistoryService = VisitHistoryService();
+
+      await visitHistoryService.addVisitHistory(
+          place.name,
+          place.id,
+          place.category,
+          place.latitude,
+          place.longitude,
+          place.address
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('방문 장소로 저장되었습니다'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('저장 실패: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
   void _navigateToCategoryPlaces(String category) async {
     try {
       final locationProvider = Provider.of<LocationProvider>(context, listen: false);

@@ -6,7 +6,7 @@ import '../../providers/location_provider.dart';
 import '../../services/visit_history_service.dart';
 import '../recommendations/history_based_recommendations_screen.dart';
 import '../place_recommendations_screen.dart';
-
+import '../navigation/navigation_details_screen.dart';
 class VisitHistoryScreen extends StatefulWidget {
   const VisitHistoryScreen({Key? key}) : super(key: key);
 
@@ -451,6 +451,442 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     return Icons.place;
   }
 
+
+  // 기존 _showHistoryDetails 메서드를 이것으로 완전히 교체하세요
+
+// 기존 _showHistoryDetails 메서드를 이것으로 완전히 교체하세요
+
+  void _showHistoryDetails(VisitHistory history) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          margin: const EdgeInsets.only(top: 50),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            minChildSize: 0.5,
+            maxChildSize: 0.9,
+            expand: false,
+            builder: (context, scrollController) {
+              return SingleChildScrollView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 상단 핸들
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 24),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+
+                    // 장소 아이콘과 이름
+                    Center(
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              _getCategoryIcon(history.category),
+                              size: 40,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            history.placeName,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              history.category,
+                              style: const TextStyle(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    // 상세 정보 섹션
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey[200]!),
+                      ),
+                      child: Column(
+                        children: [
+                          _buildModernDetailRow(
+                            Icons.location_on,
+                            '주소',
+                            history.address,
+                            Colors.red,
+                          ),
+                          const SizedBox(height: 16),
+                          _buildModernDetailRow(
+                            Icons.access_time,
+                            '최근 방문',
+                            _formatDate(history.visitDate),
+                            Colors.blue,
+                          ),
+                          const SizedBox(height: 16),
+                          _buildModernDetailRow(
+                            Icons.repeat,
+                            '방문 횟수',
+                            '${history.visitCount}회',
+                            Colors.green,
+                          ),
+                          const SizedBox(height: 16),
+                          _buildModernDetailRow(
+                            Icons.map,
+                            '좌표',
+                            '${history.latitude.toStringAsFixed(4)}, ${history.longitude.toStringAsFixed(4)}',
+                            Colors.orange,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    // 액션 버튼들
+                    Row(
+                      children: [
+                        // 비슷한 장소 찾기 버튼
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _showSimilarPlacesByCategory(history.category);
+                            },
+                            icon: const Icon(Icons.search, size: 18),
+                            label: const Text(
+                              '비슷한 장소',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.black,
+                              side: const BorderSide(color: Colors.black),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(width: 16),
+
+                        // 지도에서 보기 버튼
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _showMapLocation(history);
+                            },
+                            icon: const Icon(Icons.navigation, size: 18),
+                            label: const Text(
+                              '길찾기',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.black,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 0,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // 삭제 버튼
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _showDeleteConfirmation(history);
+                        },
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text(
+                          '기록 삭제',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+// 현대적인 스타일의 상세 정보 행 위젯
+  Widget _buildModernDetailRow(IconData icon, String label, String value, Color iconColor) {
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: iconColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            size: 18,
+            color: iconColor,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+// 삭제 확인 다이얼로그 (현대적인 스타일)
+  void _showDeleteConfirmation(VisitHistory history) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 삭제 아이콘
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.delete_outline,
+                  size: 32,
+                  color: Colors.red[400],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // 제목
+              const Text(
+                '기록 삭제',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // 설명
+              Text(
+                '${history.placeName}의 방문 기록을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+
+              // 버튼들
+              Row(
+                children: [
+                  // 취소 버튼
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.grey[700],
+                        side: BorderSide(color: Colors.grey[300]!),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text(
+                        '취소',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+
+                  // 삭제 버튼
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _deleteHistory(history);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        '삭제',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+// 상세 정보 행을 만드는 헬퍼 메서드도 추가하세요
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: Colors.grey[600]),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _showHistoryOptions(VisitHistory history) async {
     showModalBottomSheet(
       context: context,
@@ -473,8 +909,58 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
                 ),
               ),
               const SizedBox(height: 16),
+
+              // 장소 정보 헤더
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        _getCategoryIcon(history.category),
+                        color: Colors.black87,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            history.placeName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            history.category,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // 옵션 목록
               ListTile(
-                leading: const Icon(Icons.place, color: Colors.black87),
+                leading: const Icon(Icons.info, color: Colors.black87),
                 title: const Text('상세 정보'),
                 onTap: () {
                   Navigator.pop(context);
@@ -482,13 +968,24 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.map, color: Colors.black87),
+                title: const Text('지도에서 보기'),
+                subtitle: const Text('길찾기 및 경로 확인'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showMapLocation(history); // ✨ 새로 구현한 메서드 호출
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.search, color: Colors.black87),
                 title: const Text('비슷한 장소 찾기'),
+                subtitle: Text('${history.category} 카테고리 추천'),
                 onTap: () {
                   Navigator.pop(context);
                   _showSimilarPlacesByCategory(history.category);
                 },
               ),
+              const Divider(),
               ListTile(
                 leading: const Icon(Icons.delete, color: Colors.red),
                 title: const Text('기록 삭제', style: TextStyle(color: Colors.red)),
@@ -497,6 +994,7 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
                   _deleteHistory(history);
                 },
               ),
+              const SizedBox(height: 8),
             ],
           ),
         );
@@ -504,43 +1002,71 @@ class _VisitHistoryScreenState extends State<VisitHistoryScreen> with TickerProv
     );
   }
 
-  void _showHistoryDetails(VisitHistory history) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text(history.placeName),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('카테고리: ${history.category}'),
-            const SizedBox(height: 8),
-            Text('주소: ${history.address}'),
-            const SizedBox(height: 8),
-            Text('최근 방문: ${_formatDate(history.visitDate)}'),
-            const SizedBox(height: 8),
-            Text('방문 횟수: ${history.visitCount}회'),
-            const SizedBox(height: 16),
-            Text('좌표: ${history.latitude}, ${history.longitude}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('닫기', style: TextStyle(color: Colors.black)),
+  // _VisitHistoryScreenState 클래스 안에 이 메서드를 추가하세요
+
+  Future<void> _showMapLocation(VisitHistory history) async {
+    try {
+      print('지도에서 위치 보기: ${history.placeName}');
+
+      // 현재 위치 가져오기
+      final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+      LatLng currentLocation;
+
+      try {
+        final location = await locationProvider.getCurrentLocation();
+        currentLocation = location;
+        print('현재 위치: ${currentLocation.latitude}, ${currentLocation.longitude}');
+      } catch (e) {
+        // 현재 위치를 가져올 수 없으면 기본 위치 사용 (울산)
+        currentLocation = LatLng(35.5384, 129.2582);
+        print('현재 위치 가져오기 실패, 기본 위치 사용: $e');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('현재 위치를 가져올 수 없어 기본 위치에서 시작합니다'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+
+      print('목적지: ${history.latitude}, ${history.longitude}');
+
+      // NavigationDetailsScreen으로 이동
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => NavigationDetailsScreen(
+              startLat: currentLocation.latitude,
+              startLon: currentLocation.longitude,
+              endLat: history.latitude,
+              endLon: history.longitude,
+              startName: '현재 위치',
+              endName: history.placeName,
+              transportMode: 'driving', // 기본값으로 자동차 설정
+            ),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // 지도에서 위치 보기 기능 구현 (향후 추가)
-            },
-            child: const Text('지도에서 보기', style: TextStyle(color: Colors.black)),
+        );
+
+        print('NavigationDetailsScreen으로 이동 완료');
+      }
+
+    } catch (e) {
+      print('지도 보기 오류: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('지도를 열 수 없습니다: $e'),
+            duration: Duration(seconds: 3),
+            backgroundColor: Colors.red,
           ),
-        ],
-      ),
-    );
+        );
+      }
+    }
   }
 
   void _navigateToRecommendations() async {
