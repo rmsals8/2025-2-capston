@@ -58,13 +58,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _autoProcessVoice = true;
   bool _isLoading = true;
   int _currentCarouselIndex = 0;
-  Timer? _silenceTimer;
-  Timer? _maxDurationTimer;
-  Timer? _extendTimer;
-  bool _isProcessing = false;
-  String _lastWords = "";
-  int _consecutiveSilenceCount = 0;
-  bool _shouldKeepListening = false;
+
+
+
   // 데이터 상태
   List<VisitHistory> _recentPlaces = [];
   List<RecommendedPlace> _recommendedPlaces = [];
@@ -89,208 +85,160 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+// 기존의 복잡한 _initSpeech() 메서드를 이것으로 완전 교체
   void _initSpeech() async {
-    _speechEnabled = await _speechToText.initialize(
-      onStatus: (status) {
-        print('Speech status: $status');
+    try {
+      _speechEnabled = await _speechToText.initialize(
+        onStatus: (status) {
+          print('음성 상태: $status');
 
-        // ✅ 음성 인식이 끝났을 때 자동 처리
-        if (status == 'done' || status == 'notListening') {
+          if (status == 'done' || status == 'notListening') {
+            setState(() => _isListening = false);
+
+            // 강제로 음성 인식 중지
+            if (_speechToText.isListening) {
+              _speechToText.stop();
+            }
+
+            // 자동 처리 모드이고 텍스트가 있으면 처리
+            if (_autoProcessVoice && _lastRecognizedText.trim().isNotEmpty) {
+              Future.delayed(Duration(milliseconds: 300), () {
+                if (mounted) {
+                  _processScheduleVoiceInput(_lastRecognizedText);
+                }
+              });
+            } else if (_lastRecognizedText.trim().isEmpty) {
+              // 텍스트가 없으면 안내 메시지
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('음성이 인식되지 않았습니다. 다시 시도해주세요.'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+          }
+        },
+        onError: (error) {
+          print('음성 인식 오류: ${error.errorMsg}');
           setState(() => _isListening = false);
 
-          // 자동 처리 모드이고 텍스트가 있으면 바로 다이얼로그 띄우기
-          if (_autoProcessVoice && _lastRecognizedText.trim().isNotEmpty) {
-            Future.delayed(Duration(milliseconds: 500), () {
-              if (mounted) {
-                _processScheduleVoiceInput(_lastRecognizedText);
-              }
-            });
+          // 에러 타입별 메시지 처리
+          String errorMessage;
+          switch (error.errorMsg) {
+            case 'error_speech_timeout':
+              errorMessage = '음성 인식 시간이 초과되었습니다. 다시 시도해주세요.';
+              break;
+            case 'error_no_match':
+              errorMessage = '음성을 인식할 수 없습니다. 다시 시도해주세요.';
+              break;
+            case 'error_network':
+              errorMessage = '네트워크 연결을 확인해주세요.';
+              break;
+            default:
+              errorMessage = '음성 인식 오류: ${error.errorMsg}';
           }
-        }
-      },
-      onError: (error) {
-        setState(() => _isListening = false);
-        _shouldKeepListening = false;
-        _silenceTimer?.cancel();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('음성 인식 오류: ${error.errorMsg}')),
-        );
-      },
-    );
-    setState(() {});
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: Colors.orange,
+              action: SnackBarAction(
+                label: '다시 시도',
+                textColor: Colors.white,
+                onPressed: () {
+                  Future.delayed(Duration(milliseconds: 500), () {
+                    _startListening();
+                  });
+                },
+              ),
+            ),
+          );
+        },
+      );
+
+      print('음성 인식 초기화: $_speechEnabled');
+    } catch (e) {
+      print('음성 인식 초기화 실패: $e');
+      _speechEnabled = false;
+    }
+
+    if (mounted) setState(() {});
   }
   void _startListening() async {
     if (!_speechEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('음성 인식이 지원되지 않는 기기입니다.')),
+        SnackBar(content: Text('음성 인식이 지원되지 않습니다.')),
       );
+      return;
+    }
+
+    if (_isListening) {
+      _stopListening();
       return;
     }
 
     setState(() {
       _isListening = true;
-      _shouldKeepListening = true; // ✅ 추가
-      _lastWords = "";
       _lastRecognizedText = "";
-      _searchController.text = "";
+      _searchController.clear();
     });
-
-    _startSilenceTimer();
-
-    await _speechToText.listen(
-      onResult: (result) {
-        setState(() {
-          _lastRecognizedText = result.recognizedWords;
-          _searchController.text = _lastRecognizedText;
-        });
-
-        // final result일 때만 타이머 리셋
-        if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
-          _lastWords = result.recognizedWords;
-          _resetSilenceTimer();
-          print('최종 음성 결과: "${result.recognizedWords}"');
-        }
-      },
-      listenOptions: SpeechListenOptions(
-        partialResults: false,              // ✅ 새로운 방식
-        listenMode: ListenMode.confirmation,
-        cancelOnError: true,
-        autoPunctuation: true,
-      ),
-      localeId: 'ko_KR',
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.mic, color: Colors.white),
-            SizedBox(width: 8),
-            Text('듣고 있습니다... (5초 침묵 시 자동 종료)'),
-          ],
-        ),
-        duration: Duration(seconds: 2),
-        backgroundColor: Colors.green,
-        action: SnackBarAction(
-          label: '중지',
-          textColor: Colors.white,
-          onPressed: () => _stopListening(),
-        ),
-      ),
-    );
-  }
-
-// 실제 음성 인식 시작 (재시작 가능)
-  void _actualStartListening() async {
-    if (!_shouldKeepListening) return;
 
     try {
       await _speechToText.listen(
         onResult: (result) {
-          setState(() {
-            _lastRecognizedText = result.recognizedWords;
-            _searchController.text = _lastRecognizedText;
-          });
+          print('음성 인식 결과: "${result.recognizedWords}" (최종: ${result.finalResult})');
 
-          // final result일 때만 타이머 리셋
-          if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
-            _lastWords = result.recognizedWords;
-            _resetSilenceTimer();
-            print('실제 음성 결과: "${result.recognizedWords}"');
+          if (mounted) {
+            setState(() {
+              _lastRecognizedText = result.recognizedWords;
+              _searchController.text = _lastRecognizedText;
+            });
+
+            _searchController.selection = TextSelection.fromPosition(
+              TextPosition(offset: _searchController.text.length),
+            );
           }
         },
-        listenOptions: SpeechListenOptions(
-          partialResults: false,              // ✅ 새로운 방식
-          listenMode: ListenMode.confirmation,
-          cancelOnError: true,
-          autoPunctuation: true,
-        ),
-        localeId: 'ko_KR',
-      );
-    } catch (e) {
-      print('음성 인식 시작 오류: $e');
-      // 오류 발생 시 재시작 시도
-      if (_shouldKeepListening) {
-        Future.delayed(Duration(milliseconds: 500), () {
-          if (_shouldKeepListening && mounted) {
-            _restartListening();
+
+        onSoundLevelChange: (level) {
+          if (level > 0.1) {
+            print('소리 감지됨: $level');
           }
-        });
-      }
+        },
+
+        listenFor: Duration(seconds: 30),    // 30초로 줄임
+        pauseFor: Duration(seconds: 8),      // 8초 유지
+        localeId: 'ko_KR',
+
+        // ✅ 공식 예제와 동일하게 설정
+        listenOptions: SpeechListenOptions(
+          onDevice: false,                    // 클라우드 사용
+          listenMode: ListenMode.dictation, // 확인 모드 유지
+          cancelOnError: true,                // true로 변경
+          partialResults: true,
+          autoPunctuation: true,
+          enableHapticFeedback: true,
+        ),
+      );
+
+      print('음성 인식 시작됨');
+
+    } catch (e) {
+      print('음성 인식 시작 실패: $e');
+      setState(() => _isListening = false);
     }
   }
 
-// 음성 인식 자동 재시작
-  void _restartListening() async {
-    if (!_shouldKeepListening || !mounted) return;
-
-    print('음성 인식 재시작 중...');
-    try {
-      await _speechToText.listen(
-        onResult: (result) {
-          setState(() {
-            _lastRecognizedText = result.recognizedWords;
-            _searchController.text = _lastRecognizedText;
-          });
-
-          // final result일 때만 타이머 리셋
-          if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
-            _lastWords = result.recognizedWords;
-            _resetSilenceTimer();
-            print('재시작 음성 결과: "${result.recognizedWords}"');
-          }
-        },
-        listenOptions: SpeechListenOptions(
-          partialResults: false,              // ✅ 새로운 방식
-          listenMode: ListenMode.confirmation,
-          cancelOnError: true,
-          autoPunctuation: true,
-        ),
-        localeId: 'ko_KR',
-      );
-    } catch (e) {
-      print('음성 인식 재시작 오류: $e');
-    }
-  }
-
-// 5초 침묵 타이머 시작
-  void _startSilenceTimer() {
-    _silenceTimer?.cancel();
-    _silenceTimer = Timer(Duration(seconds: 20), () {
-      if (_isListening) {
-        print('5초 침묵 감지 - 음성 인식 종료');
-        _stopListeningWithCleanup();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('5초 침묵으로 음성 인식이 종료되었습니다'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    });
-  }
-
-// 침묵 타이머 리셋
-  void _resetSilenceTimer() {
-    _silenceTimer?.cancel();
-    _startSilenceTimer();
-  }
-
-// 음성 인식 중지 및 정리
-  void _stopListeningWithCleanup() async {
-    _shouldKeepListening = false; // ✅ 추가
-    _silenceTimer?.cancel();
-    await _speechToText.stop();
-    setState(() => _isListening = false);
-    print('음성 인식 완전 종료');
-  }
 
 
 // 기존 _stopListening 메소드도 업데이트
+// 기존의 _stopListening() 메서드를 이것으로 교체
   void _stopListening() async {
-    _stopListeningWithCleanup();
+    if (_speechToText.isListening) {
+      await _speechToText.stop();
+    }
+    setState(() => _isListening = false);
+    print('음성 인식 중지');
   }
   // 음성으로 인식된 일정 처리 메소드 추가
   // HomeScreen의 _processScheduleVoiceInput 메소드를 이렇게 수정하세요
@@ -1319,7 +1267,7 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
       ),
       child: Column(
         children: [
-          // 자동 처리 토글 추가
+          // 자동 처리 토글
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(
@@ -1329,7 +1277,7 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
                   size: 20,
                   color: _autoProcessVoice ? Colors.green[600] : Colors.grey[600],
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     _autoProcessVoice ? '자동 처리 모드' : '수동 처리 모드',
@@ -1343,16 +1291,14 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
                 Switch(
                   value: _autoProcessVoice,
                   onChanged: (value) {
-                    setState(() {
-                      _autoProcessVoice = value;
-                    });
+                    setState(() => _autoProcessVoice = value);
 
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
                             value
-                                ? '자동 처리 모드: 음성 인식 후 바로 일정 추가 다이얼로그가 나타납니다'
-                                : '수동 처리 모드: 버튼을 눌러서 일정을 추가하세요'
+                                ? '자동 처리: 음성 인식 후 바로 일정 추가'
+                                : '수동 처리: 버튼을 눌러서 일정 추가'
                         ),
                         duration: Duration(seconds: 2),
                         backgroundColor: value ? Colors.green[600] : Colors.grey[600],
@@ -1360,77 +1306,80 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
                     );
                   },
                   activeColor: Colors.green[600],
-                  activeTrackColor: Colors.green[200],
                 ),
               ],
             ),
           ),
 
-          // 기존 검색바
+          // 검색 입력 부분
           Row(
             children: [
+              // 마이크 버튼
+              // 마이크 버튼
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: GestureDetector(
                   onTap: _isListening ? _stopListening : _startListening,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
+                  child: AnimatedContainer(
+                    duration: Duration(milliseconds: 200),
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: _isListening
-                          ? (_autoProcessVoice ? Colors.green[100] : Colors.blue[100])
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(6),
+                          ? Colors.red[100]
+                          : Colors.blue[100],
+                      borderRadius: BorderRadius.circular(8),
+                      border: _isListening
+                          ? Border.all(color: Colors.red[300]!, width: 2)
+                          : Border.all(color: Colors.blue[300]!, width: 1),
                     ),
                     child: Icon(
                       _isListening ? Icons.mic : Icons.mic_none,
                       color: _isListening
-                          ? (_autoProcessVoice ? Colors.green[600] : Colors.blue[600])
-                          : Colors.grey[400],
+                          ? Colors.red[600]
+                          : Colors.blue[600],
                       size: 24,
                     ),
                   ),
                 ),
               ),
+
+              // 텍스트 입력 필드
               Expanded(
                 child: TextField(
                   controller: _searchController,
                   style: const TextStyle(fontSize: 16),
                   decoration: InputDecoration(
                     hintText: _isListening
-                        ? (_autoProcessVoice ? '말씀하세요... (자동 처리)' : '말씀하세요...')
-                        : '목적지나 경로를 검색하세요',
+                        ? '음성을 인식하고 있습니다...'
+                        : '목적지나 일정을 말하거나 입력하세요',
                     hintStyle: TextStyle(
-                      color: _isListening
-                          ? (_autoProcessVoice ? Colors.green[600] : Colors.blue[600])
-                          : Colors.grey[400],
+                      color: _isListening ? Colors.blue[600] : Colors.grey[400],
                       fontStyle: _isListening ? FontStyle.italic : FontStyle.normal,
                     ),
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.all(16),
                   ),
                   onSubmitted: (value) {
-                    if (value.isNotEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('검색: $value')),
-                      );
+                    if (value.trim().isNotEmpty) {
+                      _processScheduleVoiceInput(value);
                     }
                   },
                 ),
               ),
+
+              // 검색 버튼
               IconButton(
                 icon: Icon(Icons.search, color: Colors.grey[400]),
                 onPressed: () {
-                  if (_searchController.text.isNotEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('검색: ${_searchController.text}')),
-                    );
+                  if (_searchController.text.trim().isNotEmpty) {
+                    _processScheduleVoiceInput(_searchController.text);
                   }
                 },
               ),
             ],
           ),
 
-          // 수동 처리 버튼 (항상 표시하되, 자동 모드일 때는 스타일 변경)
+          // 수동 처리 버튼
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: SizedBox(
@@ -1438,8 +1387,8 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
               height: 48,
               child: ElevatedButton.icon(
                 icon: Icon(
-                    _autoProcessVoice ? Icons.touch_app : Icons.calendar_today,
-                    size: 20
+                  _autoProcessVoice ? Icons.touch_app : Icons.calendar_today,
+                  size: 20,
                 ),
                 label: Text(
                   _autoProcessVoice ? '수동으로 일정 추가' : '텍스트로 일정 추가',
@@ -1457,7 +1406,7 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
                   elevation: 0,
                 ),
                 onPressed: () {
-                  if (_searchController.text.isNotEmpty) {
+                  if (_searchController.text.trim().isNotEmpty) {
                     _processScheduleVoiceInput(_searchController.text);
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1469,12 +1418,12 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
             ),
           ),
 
-          // 모드 설명 텍스트
+          // 안내 메시지
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Text(
               _autoProcessVoice
-                  ? '💡 음성 인식이 끝나면 자동으로 일정 추가 다이얼로그가 나타납니다'
+                  ? '💡 음성 인식 후 자동으로 일정 추가 다이얼로그가 나타납니다'
                   : '💡 음성 인식 후 버튼을 눌러 일정을 추가하세요',
               style: TextStyle(
                 fontSize: 12,
@@ -1488,7 +1437,6 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
       ),
     );
   }
-
 // 오버플로우 오류 수정을 위한 SizedBox 높이 조정
 // _buildRecentPlaces 메서드에서 수정해야 할 부분
   Widget _buildRecentPlaces() {
@@ -2344,9 +2292,8 @@ latitude와 longitude 값은 장소에 맞게 적절히 설정해주세요.
 
   @override
   void dispose() {
-    _shouldKeepListening = false;
-    _silenceTimer?.cancel();
-    _speechToText.stop();
+    _speechToText.stop(); // 이것만 남기고
+    _searchController.dispose();
     super.dispose();
   }
 }

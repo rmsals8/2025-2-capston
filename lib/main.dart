@@ -1,6 +1,7 @@
-// lib/main.dart
+// lib/main.dart - 수정된 버전
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // 추가: SystemChrome 사용을 위해
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -8,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
 import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
-import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart'; // 추가
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/main_navigation.dart';
 import 'providers/schedule_provider.dart';
@@ -17,16 +18,23 @@ import 'providers/route_provider.dart';
 import 'providers/location_provider.dart';
 import 'providers/navigation_provider.dart';
 import 'services/navigation_service.dart';
-import 'services/visit_history_service.dart';  // 추가: 방문 기록 서비스
-import 'services/place_recommendation_service.dart';  // 추가: 장소 추천 서비스
+import 'services/visit_history_service.dart';
+import 'services/place_recommendation_service.dart';
 import 'providers/user_preference_provider.dart';
 
 Future<void> initializeApp() async {
   // Flutter 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 🔒 화면 회전 방지 - 세로 모드로만 고정
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
   await dotenv.load(fileName: ".env");
 
-  // 카카오 SDK 초기화 (추가된 부분)
+  // 카카오 SDK 초기화
   KakaoSdk.init(
     nativeAppKey: dotenv.env['KAKAO_NATIVE_APP_KEY'] ?? 'YOUR_NATIVE_APP_KEY',
   );
@@ -63,24 +71,20 @@ void main() async {
     final navigationService = NavigationService();
     final authProvider = AuthProvider();
     final locationProvider = LocationProvider();
-    // 수정: 아래 라인은 제거 (ChangeNotifierProxyProvider에서 처리할 것임)
-    // final scheduleProvider = ScheduleProvider(authProvider: authProvider);
     final routeProvider = RouteProvider();
     final navigationProvider = NavigationProvider();
-    final visitHistoryService = VisitHistoryService();  // 추가: 방문 기록 서비스
-    final placeRecommendationService = PlaceRecommendationService();  // 추가: 장소 추천 서비스
+    final visitHistoryService = VisitHistoryService();
+    final placeRecommendationService = PlaceRecommendationService();
 
     runApp(
       MultiProvider(
         providers: [
           Provider<NavigationService>.value(value: navigationService),
-          Provider<VisitHistoryService>.value(value: visitHistoryService),  // 추가
+          Provider<VisitHistoryService>.value(value: visitHistoryService),
           ChangeNotifierProvider(create: (_) => UserPreferenceProvider()),
-          Provider<PlaceRecommendationService>.value(value: placeRecommendationService),  // 추가
+          Provider<PlaceRecommendationService>.value(value: placeRecommendationService),
           ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
           ChangeNotifierProvider<LocationProvider>.value(value: locationProvider),
-          // 수정: 이 라인 제거 (아래 ChangeNotifierProxyProvider에서 대체)
-          // ChangeNotifierProvider<ScheduleProvider>.value(value: scheduleProvider),
           ChangeNotifierProvider<RouteProvider>.value(value: routeProvider),
           ChangeNotifierProvider<NavigationProvider>.value(value: navigationProvider),
           ChangeNotifierProxyProvider<AuthProvider, ScheduleProvider>(
@@ -98,15 +102,13 @@ void main() async {
     );
   } catch (e) {
     print('Initialization error: $e');
-    // 에러가 발생해도 기본 Provider들은 제공
-    // 수정: var가 아닌 final로 선언하고 실제 인스턴스 할당
     final authProvider = AuthProvider();
     runApp(
       MultiProvider(
         providers: [
           Provider<NavigationService>(create: (_) => NavigationService()),
-          Provider<VisitHistoryService>(create: (_) => VisitHistoryService()),  // 추가
-          Provider<PlaceRecommendationService>(create: (_) => PlaceRecommendationService()),  // 추가
+          Provider<VisitHistoryService>(create: (_) => VisitHistoryService()),
+          Provider<PlaceRecommendationService>(create: (_) => PlaceRecommendationService()),
           ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
           ChangeNotifierProvider(create: (_) => UserPreferenceProvider()),
           ChangeNotifierProvider<LocationProvider>(create: (_) => LocationProvider()),
@@ -122,13 +124,32 @@ void main() async {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final bool isLoggedIn;
 
   const MyApp({
     Key? key,
     required this.isLoggedIn,
   }) : super(key: key);
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    // 🔒 앱이 시작된 후에도 화면 회전 방지 설정 유지
+    _lockOrientation();
+  }
+
+  void _lockOrientation() {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +166,16 @@ class MyApp extends StatelessWidget {
           elevation: 1,
         ),
       ),
-      home: isLoggedIn ? const MainNavigation() : const AuthScreen(),
+      home: widget.isLoggedIn ? const MainNavigation() : const AuthScreen(),
+      // 🔒 앱 전체에 화면 회전 방지 설정 적용
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaleFactor: 1.0, // 텍스트 크기 고정 (선택사항)
+          ),
+          child: child!,
+        );
+      },
     );
   }
 }

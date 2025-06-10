@@ -49,7 +49,7 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
         toolbarHeight: 80,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
         ),
         title: const Text(
           '최적화된 일정',

@@ -634,15 +634,54 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
       print('🔄 일정 제출 시작: ${formattedSchedules.length}개 일정');
 
       // 로딩 다이얼로그 표시
+      // 개선된 로딩 다이얼로그 표시
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
+        builder: (context) => AlertDialog(
+          backgroundColor: Colors.white, // 깔끔한 흰색 배경
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          contentPadding: const EdgeInsets.all(24),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('다양한 옵션을 생성하고 있습니다...'),
+              // 로딩 인디케이터
+              Container(
+                width: 60,
+                height: 60,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Color(0xFFF5F5F5), // 아주 연한 회색 배경
+                  shape: BoxShape.circle,
+                ),
+                child: const CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                ),
+              ),
+              const SizedBox(height: 20),
+              // 제목
+              const Text(
+                '일정 최적화 중',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // 설명 텍스트
+              const Text(
+                '다양한 여행 옵션을 생성하고 있습니다.\n잠시만 기다려주세요...',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF757575), // 진한 회색으로 변경
+                  height: 1.4,
+                ),
+              ),
             ],
           ),
         ),

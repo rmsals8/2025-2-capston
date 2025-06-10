@@ -35,7 +35,11 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _autoLogin = false;
   bool _obscurePassword = true;
-  bool _isLoading = false;
+
+  // 각각의 로딩 상태를 따로 관리
+  bool _isEmailLoginLoading = false;  // 일반 로그인 로딩 상태
+  bool _isKakaoLoginLoading = false;  // 카카오 로그인 로딩 상태
+
   final baseUrl = dotenv.env['API_V1_URL'] ?? 'http://10.0.2.2:8081/api/v1';
 
   @override
@@ -48,7 +52,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleKakaoLogin() async {
     try {
       setState(() {
-        _isLoading = true;
+        _isKakaoLoginLoading = true;  // 카카오 로딩만 활성화
       });
 
       // 키 해시 직접 확인 (카카오 SDK 사용)
@@ -82,15 +86,18 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       print('카카오 로그인 실패: $error');
 
-      // 키 해시 오류인 경우 특별 처리git add .
-      // git commit -m "토큰 보여주는 부분 삭제"
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('카카오 로그인 실패: $error')),
         );
       }
 
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isKakaoLoginLoading = false;  // 카카오 로딩 비활성화
+        });
+      }
     }
   }
 
@@ -138,12 +145,6 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('로그인 처리 실패: $e')),
         );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
       }
     }
   }
@@ -273,12 +274,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // 로그인 버튼
+                    // 로그인 버튼 - 둘 중 하나라도 로딩 중이면 비활성화
                     SizedBox(
                       width: double.infinity,
                       height: 56,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleLogin,
+                        onPressed: (_isEmailLoginLoading || _isKakaoLoginLoading) ? null : _handleLogin,  // 둘 중 하나라도 로딩 중이면 비활성화
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.black,
                           foregroundColor: Colors.white,
@@ -287,7 +288,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           elevation: 0,
                         ),
-                        child: _isLoading
+                        child: _isEmailLoginLoading  // 일반 로그인 로딩만 체크
                             ? const SizedBox(
                           height: 20,
                           width: 20,
@@ -323,17 +324,19 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // 카카오 로그인
+                    // 카카오 로그인 - 둘 중 하나라도 로딩 중이면 비활성화
                     Container(
                       width: double.infinity,
                       height: 56,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFEE500),
+                        color: (_isEmailLoginLoading || _isKakaoLoginLoading)
+                            ? const Color(0xFFFEE500).withOpacity(0.5)  // 비활성화 시 투명도 50%
+                            : const Color(0xFFFEE500),  // 활성화 시 원래 색상
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: TextButton(
-                        onPressed: _isLoading ? null : _handleKakaoLogin, // 로딩 중일 때 비활성화
-                        child: _isLoading
+                        onPressed: (_isEmailLoginLoading || _isKakaoLoginLoading) ? null : _handleKakaoLogin, // 둘 중 하나라도 로딩 중이면 비활성화
+                        child: _isKakaoLoginLoading  // 카카오 로그인 로딩만 체크
                             ? const SizedBox(
                           height: 20,
                           width: 20,
@@ -347,14 +350,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           children: [
                             Icon(
                               Icons.chat_bubble,
-                              color: Colors.black.withOpacity(0.85),
+                              color: (_isEmailLoginLoading || _isKakaoLoginLoading)
+                                  ? Colors.black.withOpacity(0.3)  // 비활성화 시 아이콘도 흐리게
+                                  : Colors.black.withOpacity(0.85),  // 활성화 시 원래 색상
                               size: 24,
                             ),
                             const SizedBox(width: 12),
                             Text(
                               '카카오로 계속하기',
                               style: TextStyle(
-                                color: Colors.black.withOpacity(0.85),
+                                color: (_isEmailLoginLoading || _isKakaoLoginLoading)
+                                    ? Colors.black.withOpacity(0.3)  // 비활성화 시 텍스트도 흐리게
+                                    : Colors.black.withOpacity(0.85),  // 활성화 시 원래 색상
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -489,7 +496,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void _handleLogin() async {
     if (_formKey.currentState?.validate() ?? false) {
       setState(() {
-        _isLoading = true;
+        _isEmailLoginLoading = true;  // 일반 로그인 로딩만 활성화
       });
 
       // 웹 환경과 모바일 환경에 따라 다른 URL 사용
@@ -550,7 +557,7 @@ class _LoginScreenState extends State<LoginScreen> {
       } finally {
         if (mounted) {
           setState(() {
-            _isLoading = false;
+            _isEmailLoginLoading = false;  // 일반 로그인 로딩 비활성화
           });
         }
       }
