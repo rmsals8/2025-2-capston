@@ -14,6 +14,7 @@ import '../../widgets/auth/naver_image_button.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
+
 class LoginScreen extends StatefulWidget {
   final VoidCallback? onRegisterTap;
   final VoidCallback? onPasswordResetTap;
@@ -43,6 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _passwordController.dispose();
     super.dispose();
   }
+
   Future<void> _handleKakaoLogin() async {
     try {
       setState(() {
@@ -92,85 +94,41 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-// 백엔드에 카카오 토큰 전송
+// 백엔드에 카카오 토큰 전송 - 최적화됨
   Future<void> _sendKakaoTokenToBackend(String kakaoToken) async {
     try {
       final apiUrl = kIsWeb
           ? 'http://localhost:8081/api/v1/auth/social/kakao'
           : '$baseUrl/auth/social/kakao';
 
+      // 타임아웃 설정 추가
       final response = await http.post(
         Uri.parse(apiUrl),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'accessToken': kakaoToken,
         }),
-      );
+      ).timeout(const Duration(seconds: 10)); // 10초 타임아웃
 
       print('카카오 백엔드 응답: ${response.statusCode}, ${response.body}');
 
       if (response.statusCode == 200) {
         final authResponse = json.decode(response.body);
 
-        // JWT 토큰 저장
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('access_token', authResponse['accessToken']);
-        await prefs.setString('refresh_token', authResponse['refreshToken']);
+        // 기본 토큰 저장만 먼저 수행
+        await _saveBasicLoginData(authResponse);
 
-        // 사용자 정보 저장
-        String userId = "";
-        if (authResponse['userProfile'] != null) {
-          final userProfile = authResponse['userProfile'];
-
-          if (userProfile['id'] != null) {
-            userId = userProfile['id'].toString();
-            await prefs.setString('user_id', userId);
-          }
-          if (userProfile['name'] != null) {
-            await prefs.setString('user_name', userProfile['name']);
-          }
-          if (userProfile['email'] != null) {
-            await prefs.setString('user_email', userProfile['email']);
-          }
-
-          // 소셜 로그인 타입 설정
-          await prefs.setInt('login_type', 1); // 1: 소셜 로그인
-        }
-
-        // 첫 로그인 상태 확인 및 설정
-        final String firstLoginKey = 'user_first_login_$userId';
-        final bool hasFirstLoginRecord = prefs.containsKey(firstLoginKey);
-
-        if (hasFirstLoginRecord) {
-          final isFirstLogin = prefs.getBool(firstLoginKey) ?? false;
-          await prefs.setBool('is_first_login', isFirstLogin);
-        } else {
-          await prefs.setBool(firstLoginKey, true);
-          await prefs.setBool('is_first_login', true);
-        }
-
-        // 사용자 선호도 초기화 및 로드
-        if (mounted) {
-          try {
-            final prefProvider = Provider.of<UserPreferenceProvider>(
-                context,
-                listen: false
-            );
-            await prefProvider.resetPreferences();
-            if (userId.isNotEmpty) {
-              await prefProvider.loadPreferencesForUser(userId);
-            }
-          } catch (e) {
-            print('선호도 초기화/로드 중 오류: $e');
-          }
-        }
-
+        // 화면 이동을 먼저 하고
         if (mounted) {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const MainNavigation()),
           );
         }
+
+        // 선호도 로드는 백그라운드에서 수행
+        _loadPreferencesInBackground(authResponse);
+
       } else {
         throw Exception('백엔드 인증 실패: ${response.body}');
       }
@@ -180,6 +138,12 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('로그인 처리 실패: $e')),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }
@@ -448,7 +412,80 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-// lib/screens/auth/login_screen.dart 수정
+// 기본 로그인 데이터 저장 - 최소한의 작업만 수행
+  Future<void> _saveBasicLoginData(Map<String, dynamic> authResponse) async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // 토큰 저장 (가장 중요)
+    await prefs.setString('access_token', authResponse['accessToken']);
+    await prefs.setString('refresh_token', authResponse['refreshToken']);
+
+    // 기본 사용자 정보만 저장
+    String userId = "";
+    if (authResponse['userProfile'] != null) {
+      final userProfile = authResponse['userProfile'];
+
+      if (userProfile['id'] != null) {
+        userId = userProfile['id'].toString();
+        await prefs.setString('user_id', userId);
+      }
+      if (userProfile['name'] != null) {
+        await prefs.setString('user_name', userProfile['name']);
+      }
+      if (userProfile['email'] != null) {
+        await prefs.setString('user_email', userProfile['email']);
+      }
+
+      // 로그인 타입 저장
+      if (userProfile['loginType'] != null) {
+        await prefs.setInt('login_type', userProfile['loginType']);
+      } else {
+        await prefs.setInt('login_type', 0);
+      }
+    }
+
+    // 첫 로그인 상태 간단하게 설정
+    final String firstLoginKey = 'user_first_login_$userId';
+    final bool hasFirstLoginRecord = prefs.containsKey(firstLoginKey);
+
+    if (hasFirstLoginRecord) {
+      final isFirstLogin = prefs.getBool(firstLoginKey) ?? false;
+      await prefs.setBool('is_first_login', isFirstLogin);
+    } else {
+      await prefs.setBool(firstLoginKey, true);
+      await prefs.setBool('is_first_login', true);
+    }
+  }
+
+// 선호도 로드를 백그라운드에서 수행
+  void _loadPreferencesInBackground(Map<String, dynamic> authResponse) {
+    // 비동기로 실행하되 에러가 발생해도 앱 실행에 영향 주지 않음
+    Future.delayed(Duration.zero, () async {
+      try {
+        if (mounted) {
+          final prefProvider = Provider.of<UserPreferenceProvider>(
+              context,
+              listen: false
+          );
+          
+          await prefProvider.resetPreferences();
+          
+          final prefs = await SharedPreferences.getInstance();
+          final userId = prefs.getString('user_id');
+          
+          if (userId != null && userId.isNotEmpty) {
+            await prefProvider.loadPreferencesForUser(userId);
+            print('백그라운드에서 사용자 선호도 로드 완료');
+          }
+        }
+      } catch (e) {
+        print('백그라운드 선호도 로드 실패: $e');
+        // 실패해도 무시 - 나중에 다시 시도할 수 있음
+      }
+    });
+  }
+
+// 일반 로그인 처리 - 최적화됨
   void _handleLogin() async {
     if (_formKey.currentState?.validate() ?? false) {
       setState(() {
@@ -461,12 +498,9 @@ class _LoginScreenState extends State<LoginScreen> {
           : '$baseUrl/auth/login';
 
       print('사용 중인 API URL: $apiUrl');
-      print('요청 데이터: ${json.encode({
-        'email': _emailController.text,
-        'password': _passwordController.text,
-      })}');
-
+      
       try {
+        // 타임아웃 설정 추가 - 매우 중요!
         final response = await http.post(
           Uri.parse(apiUrl),
           headers: {'Content-Type': 'application/json'},
@@ -474,92 +508,16 @@ class _LoginScreenState extends State<LoginScreen> {
             'email': _emailController.text,
             'password': _passwordController.text,
           }),
-        );
+        ).timeout(const Duration(seconds: 10)); // 10초 타임아웃
 
         print('응답 상태 코드: ${response.statusCode}');
-        print('응답 헤더: ${response.headers}');
-        print('응답 본문: ${response.body}');
 
         if (response.statusCode == 200) {
           final authResponse = json.decode(response.body);
           print('파싱된 응답: $authResponse');
 
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('access_token', authResponse['accessToken']);
-          await prefs.setString('refresh_token', authResponse['refreshToken']);
-
-          // 사용자 정보 저장
-          String userId = "";
-          if (authResponse['userProfile'] != null) {
-            final userProfile = authResponse['userProfile'];
-
-            if (userProfile['id'] != null) {
-              userId = userProfile['id'].toString();
-              await prefs.setString('user_id', userId);
-            }
-
-            if (userProfile['name'] != null) {
-              await prefs.setString('user_name', userProfile['name']);
-            }
-
-            if (userProfile['email'] != null) {
-              await prefs.setString('user_email', userProfile['email']);
-            }
-
-            // 로그인 타입 저장 추가
-            if (userProfile['loginType'] != null) {
-              await prefs.setInt('login_type', userProfile['loginType']);
-            } else {
-              // 일반 로그인 시 loginType이 없으면 0으로 설정
-              await prefs.setInt('login_type', 0);
-            }
-          } else {
-            // userProfile이 없는 경우 기본값 설정
-            await prefs.setInt('login_type', 0);
-          }
-
-          // 첫 로그인 상태 확인 및 설정
-          // 사용자별 첫 로그인 상태를 확인하는 키를 생성
-          final String firstLoginKey = 'user_first_login_$userId';
-
-          // 이미 이 사용자에 대한 첫 로그인 상태가 있는지 확인
-          final bool hasFirstLoginRecord = prefs.containsKey(firstLoginKey);
-
-          if (hasFirstLoginRecord) {
-            // 이미 기록이 있으면 기존 값 사용 (대부분 false일 것임)
-            final isFirstLogin = prefs.getBool(firstLoginKey) ?? false;
-            await prefs.setBool('is_first_login', isFirstLogin);
-            print('사용자 $userId의 첫 로그인 상태 불러옴: $isFirstLogin');
-          } else {
-            // 기록이 없으면 이 사용자의 첫 로그인으로 간주
-            await prefs.setBool(firstLoginKey, true);
-            await prefs.setBool('is_first_login', true);
-            print('사용자 $userId의 첫 로그인 상태를 true로 설정 (최초 로그인)');
-          }
-
-          // 여기에 추가: 사용자별 선호도 초기화 및 로드
-          if (mounted) {
-            try {
-              // 사용자 선호도 제공자 접근
-              final prefProvider = Provider.of<UserPreferenceProvider>(
-                  context,
-                  listen: false
-              );
-
-              // 이전 사용자 데이터 초기화 (메모리상)
-              await prefProvider.resetPreferences();
-
-              // 현재 사용자의 선호도 명시적으로 불러오기
-              if (userId.isNotEmpty) {
-                print('로그인 성공: 사용자 $userId의 선호도 데이터 로드 시작');
-                await prefProvider.loadPreferencesForUser(userId);
-                print('사용자 $userId의 선호도 데이터 로드 완료');
-              }
-            } catch (e) {
-              print('선호도 초기화/로드 중 오류: $e');
-              // 선호도 로드 실패가 로그인 자체를 실패시키지는 않음
-            }
-          }
+          // 기본 데이터만 저장하고 화면 이동
+          await _saveBasicLoginData(authResponse);
 
           if (mounted) {
             Navigator.pushReplacement(
@@ -567,18 +525,26 @@ class _LoginScreenState extends State<LoginScreen> {
               MaterialPageRoute(builder: (context) => const MainNavigation()),
             );
           }
+
+          // 선호도 로드는 백그라운드에서
+          _loadPreferencesInBackground(authResponse);
+
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('로그인 실패: 상태 코드 ${response.statusCode}, 메시지: ${response.body}')),
+              SnackBar(content: Text('로그인 실패: 상태 코드 ${response.statusCode}')),
             );
           }
         }
       } catch (e) {
         print('로그인 요청 중 오류 발생: $e');
         if (mounted) {
+          String errorMessage = '네트워크 오류가 발생했습니다';
+          if (e.toString().contains('TimeoutException')) {
+            errorMessage = '서버 응답 시간이 초과되었습니다';
+          }
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('네트워크 오류: $e')),
+            SnackBar(content: Text(errorMessage)),
           );
         }
       } finally {

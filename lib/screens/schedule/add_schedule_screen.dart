@@ -6,7 +6,9 @@ import '../../providers/auth_provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../place/place_search_screen.dart';
 import 'optimized_schedule_screen.dart';
-
+import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
 class AddScheduleScreen extends StatefulWidget {
   const AddScheduleScreen({Key? key}) : super(key: key);
 
@@ -542,85 +544,263 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
     }
   }
 
-  Future<void> _submitSchedules() async {
-    if (_schedules.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('최소 한 개의 일정을 추가해주세요')),
-      );
-      return;
+Future<Map<String, dynamic>?> _expandScheduleOptions(List<Map<String, dynamic>> schedules) async {
+  try {
+    final url = Uri.parse('http://localhost:8083/expand-schedule-options');
+    final requestBody = {"schedules": schedules};
+
+    print('🔄 FastAPI 일정 확장 요청:');
+    print('📋 일정 수: ${schedules.length}개');
+    for (int i = 0; i < schedules.length; i++) {
+      print('   ${i+1}. ${schedules[i]['name']} (${schedules[i]['startTime']})');
     }
 
-    try {
-      final scheduleProvider = Provider.of<ScheduleProvider>(context, listen: false);
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept': 'application/json; charset=utf-8',
+      },
+      body: utf8.encode(json.encode(requestBody)),
+    );
 
-      // 좌표 형식을 수정한 복사본 생성
-      List<Map<String, dynamic>> formattedSchedules = _schedules.map((schedule) {
-        Map<String, dynamic> copy = Map<String, dynamic>.from(schedule);
+    print('🌐 FastAPI 응답 상태: ${response.statusCode}');
 
-        // 좌표가 잘못된 형식인지 확인 (과학적 표기법이나 너무 큰 숫자)
-        if (copy['latitude'] != null && copy['latitude'].toString().contains('E')) {
-          double lat = copy['latitude'];
-          double lng = copy['longitude'];
-
-          // 큰 숫자를 올바른 형식으로 변환 (예: 355437482.0 -> 35.5437482)
-          if (lat > 180) {
-            copy['latitude'] = lat / 10000000;
-          }
-          if (lng > 180) {
-            copy['longitude'] = lng / 10000000;
+    if (response.statusCode == 200) {
+      final jsonString = utf8.decode(response.bodyBytes);
+      final responseData = json.decode(jsonString);
+      
+      print('✅ FastAPI 확장 성공:');
+      if (responseData['options'] != null) {
+        print('   📊 생성된 옵션: ${responseData['options'].length}개');
+        
+        // 각 옵션의 식사 일정 로깅
+        for (int i = 0; i < responseData['options'].length; i++) {
+          final option = responseData['options'][i];
+          final schedules = option['fixedSchedules'] ?? [];
+          
+          print('   옵션 ${i+1}:');
+          for (int j = 0; j < schedules.length; j++) {
+            final schedule = schedules[j];
+            print('     ${j+1}. ${schedule['name']}');
           }
         }
-
-        return copy;
-      }).toList();
-
-      print('변환된 좌표로 제출: $formattedSchedules');
-
-      // 다중 최적화 API 호출 (단일 옵션이지만 다중 API 사용)
-      final multipleResponse = await scheduleProvider.optimizeSchedules(formattedSchedules);
-
-      if (!mounted) return;
-
-      // 첫 번째 옵션의 결과를 기존 OptimizedScheduleScreen으로 전달
-      if (multipleResponse.optimizedOptions.isNotEmpty) {
-        final firstOption = multipleResponse.optimizedOptions.first;
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => OptimizedScheduleScreen(
-              optimizedData: firstOption.result,
-            ),
-          ),
-        );
-      } else {
-        throw Exception('최적화 결과가 없습니다.');
       }
-    } catch (e) {
-      if (!mounted) return;
+      
+      return responseData;
+    } else {
+      print('❌ FastAPI 오류: ${response.statusCode}');
+      print('   응답: ${response.body}');
+      return null;
+    }
+  } catch (e) {
+    print('💥 FastAPI 호출 예외: $e');
+    return null;
+  }
+}
 
-      // 에러 처리
-      String errorMessage = '일정 최적화 중 오류가 발생했습니다';
-      if (e.toString().contains('최소 하나의 고정 일정이 필요합니다')) {
-        errorMessage = '최소 하나의 고정 일정이 필요합니다';
-      } else if (e.toString().contains('서버 응답 오류')) {
-        errorMessage = '서버와의 통신 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요';
+// _submitSchedules 메서드 완전 교체
+Future<void> _submitSchedules() async {
+  if (_schedules.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('최소 한 개의 일정을 추가해주세요')),
+    );
+    return;
+  }
+
+  try {
+    final scheduleProvider = Provider.of<ScheduleProvider>(context, listen: false);
+
+    // Step 1: 좌표 형식 수정
+    List<Map<String, dynamic>> formattedSchedules = _schedules.map((schedule) {
+      Map<String, dynamic> copy = Map<String, dynamic>.from(schedule);
+
+      if (copy['latitude'] != null && copy['latitude'].toString().contains('E')) {
+        double lat = copy['latitude'];
+        double lng = copy['longitude'];
+
+        if (lat > 180) {
+          copy['latitude'] = lat / 10000000;
+        }
+        if (lng > 180) {
+          copy['longitude'] = lng / 10000000;
+        }
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(errorMessage),
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: '확인',
-            onPressed: () {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            },
+      return copy;
+    }).toList();
+
+    print('🔄 일정 제출 시작: ${formattedSchedules.length}개 일정');
+
+    // 로딩 다이얼로그 표시
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 20),
+            Text('다양한 옵션을 생성하고 있습니다...'),
+          ],
+        ),
+      ),
+    );
+
+    // Step 2: FastAPI로 일정 확장 (단일 → 다중 옵션)
+    print('📡 Step 2: FastAPI 일정 확장');
+    final multipleOptionsData = await _expandScheduleOptions(formattedSchedules);
+    
+    if (multipleOptionsData == null || !multipleOptionsData.containsKey('options')) {
+      throw Exception('일정 확장에 실패했습니다. FastAPI 서버를 확인해주세요.');
+    }
+
+    // Step 3: FastAPI 응답을 Spring Boot 형태로 변환
+    print('🔄 Step 3: Spring Boot 형식으로 변환');
+    List<List<Map<String, dynamic>>> allScheduleOptions = [];
+    
+    List<dynamic> options = multipleOptionsData['options'];
+    
+    if (options.isEmpty) {
+      throw Exception('생성된 옵션이 없습니다.');
+    }
+    
+    for (var option in options) {
+      if (option is Map<String, dynamic>) {
+        List<Map<String, dynamic>> singleOptionSchedules = [];
+        
+        // 고정 일정 추가
+        if (option.containsKey('fixedSchedules') && option['fixedSchedules'] is List) {
+          List<dynamic> fixedSchedules = option['fixedSchedules'];
+          singleOptionSchedules.addAll(
+              fixedSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
+          );
+        }
+        
+        // 유연한 일정 추가
+        if (option.containsKey('flexibleSchedules') && option['flexibleSchedules'] is List) {
+          List<dynamic> flexibleSchedules = option['flexibleSchedules'];
+          singleOptionSchedules.addAll(
+              flexibleSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
+          );
+        }
+        
+        if (singleOptionSchedules.isNotEmpty) {
+          allScheduleOptions.add(singleOptionSchedules);
+        }
+      }
+    }
+
+    if (allScheduleOptions.isEmpty) {
+      throw Exception('변환된 일정 옵션이 없습니다.');
+    }
+
+    print('✅ 변환 완료: ${allScheduleOptions.length}개 옵션 → Spring Boot 전송');
+
+    // Step 4: Spring Boot 다중 최적화 호출
+    print('🚀 Step 4: Spring Boot 최적화');
+    final multipleResponse = await scheduleProvider.optimizeMultipleScheduleOptions(allScheduleOptions);
+
+    // 로딩 다이얼로그 닫기
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+
+    if (!mounted) return;
+
+    // Step 5: 결과 화면으로 이동
+    if (multipleResponse.optimizedOptions.isNotEmpty) {
+      print('🎉 최적화 완료: ${multipleResponse.optimizedOptions.length}개 최적화된 옵션');
+      
+      // 첫 번째 옵션을 OptimizedScheduleScreen으로 전송
+      final firstOption = multipleResponse.optimizedOptions.first;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => OptimizedScheduleScreen(
+            optimizedData: firstOption.result,
           ),
         ),
       );
+      
+      // 성공 메시지
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${allScheduleOptions.length}개의 다양한 옵션으로 최적화되었습니다!'),
+          backgroundColor: Colors.green[600],
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      throw Exception('최적화 결과가 없습니다.');
     }
+
+  } catch (e) {
+    // 로딩 다이얼로그가 열려있으면 닫기
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+    
+    if (!mounted) return;
+
+    print('❌ 전체 프로세스 오류: $e');
+
+    // 구체적인 에러 메시지 생성
+    String errorMessage = '일정 처리 중 오류가 발생했습니다';
+    
+    String errorString = e.toString().toLowerCase();
+    
+    if (errorString.contains('fastapi') || errorString.contains('localhost:8083')) {
+      errorMessage = 'FastAPI 서버 연결에 실패했습니다. 서버가 실행 중인지 확인해주세요.';
+    } else if (errorString.contains('확장')) {
+      errorMessage = '다양한 옵션 생성에 실패했습니다. 입력된 일정을 확인해주세요.';
+    } else if (errorString.contains('optimize')) {
+      errorMessage = '일정 최적화에 실패했습니다. 서버 상태를 확인해주세요.';
+    } else if (errorString.contains('network') || errorString.contains('connection')) {
+      errorMessage = '네트워크 연결을 확인해주세요';
+    } else if (errorString.contains('timeout')) {
+      errorMessage = '서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요';
+    }
+
+    // 에러 다이얼로그 표시
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('일정 처리 오류'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(errorMessage),
+            const SizedBox(height: 8),
+            Text(
+              '상세 오류: ${e.toString()}',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('확인'),
+          ),
+          if (!errorString.contains('network'))
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _submitSchedules(); // 재시도
+              },
+              child: const Text('재시도'),
+            ),
+        ],
+      ),
+    );
   }
+}
 
   String _formatDateTime(DateTime dateTime) {
     return '${dateTime.month}/${dateTime.day} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
