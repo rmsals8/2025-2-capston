@@ -1,23 +1,135 @@
-plugins {
-    id "com.android.application"
-    id "kotlin-android"
-    id "dev.flutter.flutter-gradle-plugin"
-}
+// plugins {
+//     id "com.android.application"
+//     id "kotlin-android"
+//     id "dev.flutter.flutter-gradle-plugin"
+// }
+
+// def localProperties = new Properties()
+// def localPropertiesFile = rootProject.file('local.properties')
+// if (localPropertiesFile.exists()) {
+//     localPropertiesFile.withReader('UTF-8') { reader ->
+//         localProperties.load(reader)
+//     }
+// }
+
+// // 키스토어 속성 로드 추가
+// def keystoreProperties = new Properties()
+// def keystorePropertiesFile = rootProject.file('key.properties')
+// if (keystorePropertiesFile.exists()) {
+//     keystorePropertiesFile.withReader('UTF-8') { reader ->
+//         keystoreProperties.load(reader)
+//     }
+// }
+
+// def flutterRoot = localProperties.getProperty('flutter.sdk')
+// if (flutterRoot == null) {
+//     throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
+// }
+
+// def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+// if (flutterVersionCode == null) {
+//     flutterVersionCode = '1'
+// }
+
+// def flutterVersionName = localProperties.getProperty('flutter.versionName')
+// if (flutterVersionName == null) {
+//     flutterVersionName = '1.0'
+// }
+
+// apply plugin: 'com.android.application'
+// apply plugin: 'com.google.gms.google-services'
+
+// android {
+//     namespace = "com.trip_helper.trip_helper"
+//     compileSdk = 35  // 플러그인 요구사항에 맞춤
+//     ndkVersion flutter.ndkVersion
+
+//     compileOptions {
+//         sourceCompatibility JavaVersion.VERSION_17
+//         targetCompatibility JavaVersion.VERSION_17
+//     }
+
+//     kotlinOptions {
+//         jvmTarget = '17'
+//     }
+    
+//     sourceSets {
+//         main.java.srcDirs += 'src/main/kotlin'
+//     }
+
+//     // 서명 설정 추가
+//     signingConfigs {
+//         release {
+//             keyAlias keystoreProperties['keyAlias']
+//             keyPassword keystoreProperties['keyPassword']
+//             storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+//             storePassword keystoreProperties['storePassword']
+//         }
+//     }
+
+//     defaultConfig {
+//         // 패키지명 변경
+//         applicationId "com.trip_helper.app"
+//         minSdkVersion 23
+//         targetSdkVersion 35  // 35로 맞춤
+//         versionCode flutterVersionCode.toInteger()
+//         versionName flutterVersionName
+
+//         // 카카오 로그인을 위한 manifest placeholder 추가
+//         manifestPlaceholders = [kakaoScheme: "kakao7245b857499b1f8786af07567b3aea91"]
+        
+//         // 메모리 최적화 설정 추가
+//         multiDexEnabled true
+//     }
+
+//     buildTypes {
+//         release {
+//             // 디버그 키 대신 릴리스 키 사용하도록 변경
+//             signingConfig signingConfigs.release
+            
+//             // 메모리 최적화를 위한 설정
+//             minifyEnabled false
+//             shrinkResources false
+//         }
+        
+//         debug {
+//             // 디버그 빌드 최적화
+//             minifyEnabled false
+//             shrinkResources false
+//         }
+//     }
+
+//     // Lint 옵션 추가 (메모리 절약)
+//     lint {
+//         checkReleaseBuilds false
+//         abortOnError false
+//         disable 'InvalidPackage'
+//     }
+
+//     // 메모리 관련 설정 추가
+//     packagingOptions {
+//         pickFirst '**/libc++_shared.so'
+//         pickFirst '**/libjsc.so'
+//     }
+// }
+
+// flutter {
+//     source '../..'
+// }
+
+// dependencies {
+//     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+//     implementation platform('com.google.firebase:firebase-bom:32.7.1')
+    
+//     // MultiDex 지원 추가
+//     implementation 'androidx.multidex:multidex:2.0.1'
+// }
 
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
     localPropertiesFile.withReader('UTF-8') { reader ->
         localProperties.load(reader)
-    }
-}
-
-// 키스토어 속성 로드 추가
-def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('key.properties')
-if (keystorePropertiesFile.exists()) {
-    keystorePropertiesFile.withReader('UTF-8') { reader ->
-        keystoreProperties.load(reader)
     }
 }
 
@@ -37,11 +149,11 @@ if (flutterVersionName == null) {
 }
 
 apply plugin: 'com.android.application'
-apply plugin: 'com.google.gms.google-services'
+apply plugin: 'kotlin-android'
+apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
-    namespace = "com.trip_helper.trip_helper"
-    compileSdk = 35  // 플러그인 요구사항에 맞춤
+    compileSdkVersion 33
     ndkVersion flutter.ndkVersion
 
     compileOptions {
@@ -52,64 +164,23 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
-    
+
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
     }
 
-    // 서명 설정 추가
-    signingConfigs {
-        release {
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
-            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
-            storePassword keystoreProperties['storePassword']
-        }
-    }
-
     defaultConfig {
-        // 패키지명 변경
         applicationId "com.trip_helper.app"
-        minSdkVersion 23
-        targetSdkVersion 35  // 35로 맞춤
+        minSdkVersion 21
+        targetSdkVersion 33
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
-
-        // 카카오 로그인을 위한 manifest placeholder 추가
-        manifestPlaceholders = [kakaoScheme: "kakao7245b857499b1f8786af07567b3aea91"]
-        
-        // 메모리 최적화 설정 추가
-        multiDexEnabled true
     }
 
     buildTypes {
         release {
-            // 디버그 키 대신 릴리스 키 사용하도록 변경
-            signingConfig signingConfigs.release
-            
-            // 메모리 최적화를 위한 설정
-            minifyEnabled false
-            shrinkResources false
+            signingConfig signingConfigs.debug
         }
-        
-        debug {
-            // 디버그 빌드 최적화
-            minifyEnabled false
-            shrinkResources false
-        }
-    }
-
-    // Lint 옵션 추가 (메모리 절약)
-    lint {
-        checkReleaseBuilds false
-        abortOnError false
-        disable 'InvalidPackage'
-    }
-
-    // 메모리 관련 설정 추가
-    packagingOptions {
-        pickFirst '**/libc++_shared.so'
-        pickFirst '**/libjsc.so'
     }
 }
 
@@ -118,9 +189,5 @@ flutter {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    implementation platform('com.google.firebase:firebase-bom:32.7.1')
-    
-    // MultiDex 지원 추가
-    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
 }
