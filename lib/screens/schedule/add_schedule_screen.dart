@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/schedule_provider.dart';
 import '../place/place_search_screen.dart';
+import 'multiple_options_screen.dart';
 import 'optimized_schedule_screen.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -601,6 +602,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
   }
 
 // _submitSchedules 메서드 완전 교체
+  // _submitSchedules 메서드를 home_screen.dart와 동일한 로직으로 개선
   Future<void> _submitSchedules() async {
     if (_schedules.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -633,13 +635,12 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
 
       print('🔄 일정 제출 시작: ${formattedSchedules.length}개 일정');
 
-      // 로딩 다이얼로그 표시
       // 개선된 로딩 다이얼로그 표시
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
-          backgroundColor: Colors.white, // 깔끔한 흰색 배경
+          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -647,13 +648,12 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 로딩 인디케이터
               Container(
                 width: 60,
                 height: 60,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Color(0xFFF5F5F5), // 아주 연한 회색 배경
+                  color: Color(0xFFF5F5F5),
                   shape: BoxShape.circle,
                 ),
                 child: const CircularProgressIndicator(
@@ -662,7 +662,6 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              // 제목
               const Text(
                 '일정 최적화 중',
                 style: TextStyle(
@@ -672,13 +671,12 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              // 설명 텍스트
               const Text(
                 '다양한 여행 옵션을 생성하고 있습니다.\n잠시만 기다려주세요...',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
-                  color: Color(0xFF757575), // 진한 회색으로 변경
+                  color: Color(0xFF757575),
                   height: 1.4,
                 ),
               ),
@@ -739,42 +737,69 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
 
       // Step 4: Spring Boot 다중 최적화 호출
       print('🚀 Step 4: Spring Boot 최적화');
-      final multipleResponse = await scheduleProvider.optimizeMultipleScheduleOptions(allScheduleOptions);
 
-      // 로딩 다이얼로그 닫기
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
-      }
+      // ✅ 핵심 개선: home_screen.dart와 동일한 분기 처리 로직 추가
+      if (allScheduleOptions.length > 1) {
+        // 여러 옵션이 있으면 다중 옵션 비교 화면으로
+        print('Multiple options detected, using multiple optimization');
+        print('다중 옵션 감지, 다중 최적화 사용');
 
-      if (!mounted) return;
+        final multipleOptimizeResponse = await scheduleProvider.optimizeMultipleScheduleOptions(allScheduleOptions);
 
-      // Step 5: 결과 화면으로 이동
-      if (multipleResponse.optimizedOptions.isNotEmpty) {
-        print('🎉 최적화 완료: ${multipleResponse.optimizedOptions.length}개 최적화된 옵션');
+        // 로딩 다이얼로그 닫기
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
 
-        // 첫 번째 옵션을 OptimizedScheduleScreen으로 전송
-        final firstOption = multipleResponse.optimizedOptions.first;
+        if (!mounted) return;
 
+        // 다중 옵션 비교 화면으로 이동
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => OptimizedScheduleScreen(
-              optimizedData: firstOption.result,
+            builder: (context) => MultipleOptionsScreen(
+              multipleResponse: multipleOptimizeResponse,
             ),
           ),
         );
-
-        // 성공 메시지
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${allScheduleOptions.length}개의 다양한 옵션으로 최적화되었습니다!'),
-            backgroundColor: Colors.green[600],
-            duration: const Duration(seconds: 2),
-          ),
-        );
       } else {
-        throw Exception('최적화 결과가 없습니다.');
+        // 단일 옵션이면 기존 방식 사용
+        print('Single option detected, using single optimization');
+        print('단일 옵션 감지, 단일 최적화 사용');
+
+        final multipleOptimizeResponse = await scheduleProvider.optimizeSchedules(allScheduleOptions.first);
+
+        // 로딩 다이얼로그 닫기
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+
+        if (!mounted) return;
+
+        if (multipleOptimizeResponse.optimizedOptions.isNotEmpty) {
+          final firstOption = multipleOptimizeResponse.optimizedOptions.first;
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => OptimizedScheduleScreen(
+                optimizedData: firstOption.result,
+              ),
+            ),
+          );
+        } else {
+          throw Exception('최적화 결과가 없습니다.');
+        }
       }
+
+      // 성공 메시지
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${allScheduleOptions.length}개의 다양한 옵션으로 최적화되었습니다!'),
+          backgroundColor: Colors.green[600],
+          duration: const Duration(seconds: 2),
+        ),
+      );
 
     } catch (e) {
       // 로딩 다이얼로그가 열려있으면 닫기
