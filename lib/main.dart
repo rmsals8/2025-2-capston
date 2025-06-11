@@ -1,7 +1,6 @@
-// lib/main.dart - 수정된 버전
+// lib/main.dart - 완전한 파일
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 추가: SystemChrome 사용을 위해
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
 import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
-import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart'; // 추가
 import 'screens/auth/auth_screen.dart';
 import 'screens/main_navigation.dart';
 import 'providers/schedule_provider.dart';
@@ -18,23 +17,16 @@ import 'providers/route_provider.dart';
 import 'providers/location_provider.dart';
 import 'providers/navigation_provider.dart';
 import 'services/navigation_service.dart';
-import 'services/visit_history_service.dart';
-import 'services/place_recommendation_service.dart';
+import 'services/visit_history_service.dart';  // 추가: 방문 기록 서비스
+import 'services/place_recommendation_service.dart';  // 추가: 장소 추천 서비스
 import 'providers/user_preference_provider.dart';
 
 Future<void> initializeApp() async {
   // Flutter 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
-
-  // 🔒 화면 회전 방지 - 세로 모드로만 고정
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-
   await dotenv.load(fileName: ".env");
 
-  // 카카오 SDK 초기화
+  // 카카오 SDK 초기화 (추가된 부분)
   KakaoSdk.init(
     nativeAppKey: dotenv.env['KAKAO_NATIVE_APP_KEY'] ?? 'YOUR_NATIVE_APP_KEY',
   );
@@ -64,32 +56,40 @@ void main() async {
   try {
     await initializeApp();
 
+    // ✅ AuthProvider를 먼저 생성하고 초기화
+    final authProvider = AuthProvider();
+    await authProvider.initializeAuth(); // 새로운 초기화 메서드 호출
+
     final prefs = await SharedPreferences.getInstance();
     final String? token = prefs.getString('access_token');
 
+    // ✅ 토큰이 있고 AuthProvider의 로그인 상태가 true인 경우만 로그인 상태로 설정
+    final bool isLoggedIn = token != null && authProvider.isLoggedIn;
+
+    print('앱 시작 - 토큰 존재: ${token != null}, AuthProvider 로그인 상태: ${authProvider.isLoggedIn}, 최종 로그인 상태: $isLoggedIn');
+
     // 서비스 및 Provider 초기화
     final navigationService = NavigationService();
-    final authProvider = AuthProvider();
     final locationProvider = LocationProvider();
     final routeProvider = RouteProvider();
     final navigationProvider = NavigationProvider();
-    final visitHistoryService = VisitHistoryService();
-    final placeRecommendationService = PlaceRecommendationService();
+    final visitHistoryService = VisitHistoryService();  // 추가: 방문 기록 서비스
+    final placeRecommendationService = PlaceRecommendationService();  // 추가: 장소 추천 서비스
 
     runApp(
       MultiProvider(
         providers: [
           Provider<NavigationService>.value(value: navigationService),
-          Provider<VisitHistoryService>.value(value: visitHistoryService),
+          Provider<VisitHistoryService>.value(value: visitHistoryService),  // 추가
           ChangeNotifierProvider(create: (_) => UserPreferenceProvider()),
-          Provider<PlaceRecommendationService>.value(value: placeRecommendationService),
-          ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+          Provider<PlaceRecommendationService>.value(value: placeRecommendationService),  // 추가
+          ChangeNotifierProvider<AuthProvider>.value(value: authProvider), // ✅ 초기화된 AuthProvider 사용
           ChangeNotifierProvider<LocationProvider>.value(value: locationProvider),
           ChangeNotifierProvider<RouteProvider>.value(value: routeProvider),
           ChangeNotifierProvider<NavigationProvider>.value(value: navigationProvider),
           ChangeNotifierProxyProvider<AuthProvider, ScheduleProvider>(
             create: (context) => ScheduleProvider(
-              authProvider: context.read<AuthProvider>(),
+              authProvider: authProvider, // ✅ 초기화된 AuthProvider 사용
             ),
             update: (context, auth, previous) => ScheduleProvider(
               authProvider: auth,
@@ -97,18 +97,19 @@ void main() async {
           ),
           ChangeNotifierProvider(create: (_) => RouteProvider()),
         ],
-        child: MyApp(isLoggedIn: token != null),
+        child: MyApp(isLoggedIn: isLoggedIn), // ✅ 정확한 로그인 상태 전달
       ),
     );
   } catch (e) {
     print('Initialization error: $e');
+    // 에러가 발생해도 기본 Provider들은 제공
     final authProvider = AuthProvider();
     runApp(
       MultiProvider(
         providers: [
           Provider<NavigationService>(create: (_) => NavigationService()),
-          Provider<VisitHistoryService>(create: (_) => VisitHistoryService()),
-          Provider<PlaceRecommendationService>(create: (_) => PlaceRecommendationService()),
+          Provider<VisitHistoryService>(create: (_) => VisitHistoryService()),  // 추가
+          Provider<PlaceRecommendationService>(create: (_) => PlaceRecommendationService()),  // 추가
           ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
           ChangeNotifierProvider(create: (_) => UserPreferenceProvider()),
           ChangeNotifierProvider<LocationProvider>(create: (_) => LocationProvider()),
@@ -124,7 +125,7 @@ void main() async {
   }
 }
 
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   final bool isLoggedIn;
 
   const MyApp({
@@ -133,26 +134,9 @@ class MyApp extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  @override
-  void initState() {
-    super.initState();
-    // 🔒 앱이 시작된 후에도 화면 회전 방지 설정 유지
-    _lockOrientation();
-  }
-
-  void _lockOrientation() {
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-  }
-
-  @override
   Widget build(BuildContext context) {
+    print('MyApp 빌드 - 초기 로그인 상태: $isLoggedIn');
+
     return MaterialApp(
       title: '여행 도우미',
       navigatorKey: NavigationService.navigatorKey,
@@ -166,16 +150,15 @@ class _MyAppState extends State<MyApp> {
           elevation: 1,
         ),
       ),
-      home: widget.isLoggedIn ? const MainNavigation() : const AuthScreen(),
-      // 🔒 앱 전체에 화면 회전 방지 설정 적용
-      builder: (context, child) {
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaleFactor: 1.0, // 텍스트 크기 고정 (선택사항)
-          ),
-          child: child!,
-        );
-      },
+      // ✅ Consumer를 사용해서 AuthProvider 상태 변화를 실시간으로 감지
+      home: Consumer<AuthProvider>(
+        builder: (context, authProvider, child) {
+          print('Consumer 빌드 - AuthProvider 로그인 상태: ${authProvider.isLoggedIn}');
+
+          // ✅ AuthProvider의 실시간 상태에 따라 화면 결정
+          return authProvider.isLoggedIn ? const MainNavigation() : const AuthScreen();
+        },
+      ),
     );
   }
 }

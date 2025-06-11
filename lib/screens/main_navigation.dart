@@ -1,4 +1,4 @@
-// lib/screens/main_navigation.dart
+// lib/screens/main_navigation.dart - 완전한 파일
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -8,6 +8,7 @@ import 'package:trip_helper/screens/route/route_generation_screen.dart';
 import 'package:trip_helper/screens/profile/profile_history_screen.dart';
 import 'package:trip_helper/providers/location_provider.dart';
 import 'package:trip_helper/providers/navigation_provider.dart';
+import 'package:trip_helper/providers/auth_provider.dart';
 import 'package:trip_helper/services/navigation_service.dart';
 import 'package:trip_helper/services/visit_history_service.dart';
 import 'package:trip_helper/services/place_recommendation_service.dart';
@@ -21,10 +22,10 @@ class MainNavigation extends StatefulWidget {
   State<MainNavigation> createState() => _MainNavigationState();
 }
 
-class _MainNavigationState extends State<MainNavigation> {
+class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   final PageController _pageController = PageController();
-  
+
   // 서비스 인스턴스
   final NavigationService _navigationService = NavigationService();
   final VisitHistoryService _visitHistoryService = VisitHistoryService();
@@ -34,98 +35,157 @@ class _MainNavigationState extends State<MainNavigation> {
   void initState() {
     super.initState();
 
+    // ✅ 앱 생명주기 관찰자 추가
+    WidgetsBinding.instance.addObserver(this);
+
     // 위치 서비스 초기화
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final locationProvider = Provider.of<LocationProvider>(context, listen: false);
       locationProvider.startTracking();
-      
+
       // 첫 로그인 체크 및 카테고리 선호도 화면으로 이동
       _checkFirstLogin();
     });
   }
-  
-  // lib/screens/main_navigation.dart의 _checkFirstLogin 메서드 수정
-
-Future<void> _checkFirstLogin() async {
-  // 약간의 지연을 주어 화면 전환이 자연스럽게 하기
-  await Future.delayed(const Duration(milliseconds: 100));
-  
-  if (!mounted) return;
-  
-  // SharedPreferences에서 직접 확인
-  final prefs = await SharedPreferences.getInstance();
-  
-  // 현재 사용자 ID 가져오기
-  final userId = prefs.getString('user_id');
-  
-  if (userId == null || userId.isEmpty) {
-    print('사용자 ID를 찾을 수 없음. 첫 로그인 검사를 건너뜁니다.');
-    return;
-  }
-  
-  // 사용자별 첫 로그인 상태 키 생성
-  final String userFirstLoginKey = 'user_first_login_$userId';
-      
-  // 사용자별 첫 로그인 상태 확인
-  bool isFirstLogin = false;
-  
-  // 사용자별 설정이 있으면 그것을 사용
-  if (prefs.containsKey(userFirstLoginKey)) {
-    isFirstLogin = prefs.getBool(userFirstLoginKey) ?? false;
-    print('사용자 $userId의 첫 로그인 상태: $isFirstLogin (사용자별 설정)');
-  } else {
-    // 없으면 일반 설정 사용
-    isFirstLogin = prefs.getBool('is_first_login') ?? false;
-    
-    // 사용자별 설정도 함께 저장 (동기화)
-    if (userId.isNotEmpty) {
-      await prefs.setBool(userFirstLoginKey, isFirstLogin);
-      print('사용자 $userId의 첫 로그인 상태 생성: $isFirstLogin');
-    }
-    
-    print('일반 첫 로그인 상태: $isFirstLogin');
-  }
-  
-  // is_first_login에도 현재 상태 저장 (다른 화면과의 호환성 유지)
-  await prefs.setBool('is_first_login', isFirstLogin);
-  
-  // 사용자 기반 선호도 확인
-  final bool hasPreferredCategories = await _hasUserPreferences(userId);
-  
-  // 첫 로그인이거나 선호 카테고리가 없는 경우 카테고리 선택 화면으로 이동
-  if ((isFirstLogin || !hasPreferredCategories) && mounted) {
-    print('첫 로그인 또는 카테고리 선호도 없음: 카테고리 선호도 화면으로 이동합니다.');
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const CategoryPreferenceScreen(isFirstLogin: true),
-      ),
-    );
-  } else {
-    print('첫 로그인 아님: 일반 메인 화면을 표시합니다.');
-  }
-}
-
-// 사용자별 선호 카테고리 존재 여부 확인
-Future<bool> _hasUserPreferences(String userId) async {
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final String userCategoryPrefsKey = 'user_category_preferences_$userId';
-    
-    // 사용자별 선호 카테고리 가져오기
-    final userCategories = prefs.getStringList(userCategoryPrefsKey);
-    
-    // 선호 카테고리가 있으면 true 반환
-    return userCategories != null && userCategories.isNotEmpty;
-  } catch (e) {
-    print('선호 카테고리 확인 오류: $e');
-    return false;
-  }
-}
 
   @override
   void dispose() {
+    // ✅ 앱 생명주기 관찰자 제거
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
+  }
+
+  // ✅ 앱 생명주기 변화 감지
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+      // 앱이 다시 활성화될 때 로그인 상태 재확인 (선택사항)
+        print('앱이 포그라운드로 복귀');
+        _checkAuthStatusOnResume();
+        break;
+      case AppLifecycleState.paused:
+      // 앱이 백그라운드로 이동할 때
+        print('앱이 백그라운드로 이동');
+        break;
+      case AppLifecycleState.detached:
+      // 앱이 종료될 때
+        print('앱 종료');
+        break;
+      case AppLifecycleState.inactive:
+      // 앱이 비활성 상태일 때 (예: 전화 받기, 알림 패널 열기 등)
+        print('앱이 비활성 상태');
+        break;
+      case AppLifecycleState.hidden:
+      // 앱이 숨겨진 상태일 때
+        print('앱이 숨겨진 상태');
+        break;
+    }
+  }
+
+  // ✅ 앱 재개 시 인증 상태 확인 (선택사항)
+  Future<void> _checkAuthStatusOnResume() async {
+    if (!mounted) return;
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = await authProvider.getToken();
+
+      print('앱 재개 시 인증 상태 확인 - 토큰: ${token != null ? "존재" : "없음"}, 로그인 상태: ${authProvider.isLoggedIn}');
+
+      if (token == null && authProvider.isLoggedIn) {
+        // 토큰이 없는데 로그인 상태인 경우 로그아웃 처리
+        print('토큰 불일치 감지, 로그아웃 처리');
+        await authProvider.logout();
+      } else if (token != null && !authProvider.isLoggedIn) {
+        // 토큰이 있는데 로그아웃 상태인 경우 로그인 상태로 복원
+        print('토큰 존재하지만 로그아웃 상태, 로그인 상태 복원 시도');
+        await authProvider.initializeAuth();
+      }
+    } catch (e) {
+      print('앱 재개 시 인증 상태 확인 오류: $e');
+    }
+  }
+
+  // lib/screens/main_navigation.dart의 _checkFirstLogin 메서드
+
+  Future<void> _checkFirstLogin() async {
+    // 약간의 지연을 주어 화면 전환이 자연스럽게 하기
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    if (!mounted) return;
+
+    // SharedPreferences에서 직접 확인
+    final prefs = await SharedPreferences.getInstance();
+
+    // 현재 사용자 ID 가져오기
+    final userId = prefs.getString('user_id');
+
+    if (userId == null || userId.isEmpty) {
+      print('사용자 ID를 찾을 수 없음. 첫 로그인 검사를 건너뜁니다.');
+      return;
+    }
+
+    // 사용자별 첫 로그인 상태 키 생성
+    final String userFirstLoginKey = 'user_first_login_$userId';
+
+    // 사용자별 첫 로그인 상태 확인
+    bool isFirstLogin = false;
+
+    // 사용자별 설정이 있으면 그것을 사용
+    if (prefs.containsKey(userFirstLoginKey)) {
+      isFirstLogin = prefs.getBool(userFirstLoginKey) ?? false;
+      print('사용자 $userId의 첫 로그인 상태: $isFirstLogin (사용자별 설정)');
+    } else {
+      // 없으면 일반 설정 사용
+      isFirstLogin = prefs.getBool('is_first_login') ?? false;
+
+      // 사용자별 설정도 함께 저장 (동기화)
+      if (userId.isNotEmpty) {
+        await prefs.setBool(userFirstLoginKey, isFirstLogin);
+        print('사용자 $userId의 첫 로그인 상태 생성: $isFirstLogin');
+      }
+
+      print('일반 첫 로그인 상태: $isFirstLogin');
+    }
+
+    // is_first_login에도 현재 상태 저장 (다른 화면과의 호환성 유지)
+    await prefs.setBool('is_first_login', isFirstLogin);
+
+    // 사용자 기반 선호도 확인
+    final bool hasPreferredCategories = await _hasUserPreferences(userId);
+
+    // 첫 로그인이거나 선호 카테고리가 없는 경우 카테고리 선택 화면으로 이동
+    if ((isFirstLogin || !hasPreferredCategories) && mounted) {
+      print('첫 로그인 또는 카테고리 선호도 없음: 카테고리 선호도 화면으로 이동합니다.');
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => const CategoryPreferenceScreen(isFirstLogin: true),
+        ),
+      );
+    } else {
+      print('첫 로그인 아님: 일반 메인 화면을 표시합니다.');
+    }
+  }
+
+// 사용자별 선호 카테고리 존재 여부 확인
+  Future<bool> _hasUserPreferences(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String userCategoryPrefsKey = 'user_category_preferences_$userId';
+
+      // 사용자별 선호 카테고리 가져오기
+      final userCategories = prefs.getStringList(userCategoryPrefsKey);
+
+      // 선호 카테고리가 있으면 true 반환
+      return userCategories != null && userCategories.isNotEmpty;
+    } catch (e) {
+      print('선호 카테고리 확인 오류: $e');
+      return false;
+    }
   }
 
   @override
@@ -139,9 +199,9 @@ Future<bool> _hasUserPreferences(String userId) async {
         Provider<VisitHistoryService>.value(value: _visitHistoryService),
         Provider<PlaceRecommendationService>.value(value: _recommendationService),
         // UserPreferenceProvider 추가
-      ChangeNotifierProvider<UserPreferenceProvider>(
-        create: (_) => UserPreferenceProvider(),
-      ),
+        ChangeNotifierProvider<UserPreferenceProvider>(
+          create: (_) => UserPreferenceProvider(),
+        ),
       ],
       child: Scaffold(
         backgroundColor: Colors.white,
@@ -219,7 +279,7 @@ Future<bool> _hasUserPreferences(String userId) async {
     required int index,
   }) {
     final isSelected = _selectedIndex == index;
-    
+
     return InkWell(
       onTap: () => _onItemTapped(index),
       borderRadius: BorderRadius.circular(12),
