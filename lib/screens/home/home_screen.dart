@@ -244,156 +244,173 @@ class _HomeScreenState extends State<HomeScreen> {
   // HomeScreen의 _processScheduleVoiceInput 메소드를 이렇게 수정하세요
 
 // 음성으로 인식된 일정 처리 메소드 수정
+// 음성으로 인식된 일정 처리 메소드 수정 (부드러운 애니메이션 추가)
+  // 🔥 해결 방안 1: 로딩 다이얼로그를 새 화면이 완전히 로드될 때까지 유지
   Future<void> _processScheduleVoiceInput(String voiceText) async {
     if (voiceText.isEmpty) return;
 
-    print('Processing voice input: $voiceText'); // 영어 로그
-    print('음성 입력 처리 중: $voiceText'); // 한글 로그
+    print('Processing voice input: $voiceText');
+    print('음성 입력 처리 중: $voiceText');
 
     // 일정 추가 여부 확인 다이얼로그
-    bool shouldProcess = await showDialog(
+    bool shouldProcess = await showGeneralDialog<bool>(
       context: context,
-      barrierDismissible: false, // 바깥 영역 터치로 닫기 방지
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.5),
+      transitionDuration: const Duration(milliseconds: 300),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.3),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          )),
+          child: FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(
+              scale: Tween<double>(
+                begin: 0.9,
+                end: 1.0,
+              ).animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              )),
+              child: child,
+            ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 아이콘
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  shape: BoxShape.circle,
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
                 ),
-                child: Icon(
-                  Icons.mic,
-                  size: 32,
-                  color: Colors.blue[600],
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ... 기존 다이얼로그 내용 동일 ...
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.mic,
+                    size: 32,
+                    color: Colors.blue[600],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-
-              // 제목
-              const Text(
-                '음성 인식 완료',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.black,
+                const SizedBox(height: 20),
+                const Text(
+                  '음성 인식 완료',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-
-              // 설명 텍스트
-              Text(
-                '다음 내용을 일정으로 추가할까요?',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-
-              // 인식된 텍스트 박스
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[200]!),
-                ),
-                child: Text(
-                  voiceText,
-                  style: const TextStyle(
+                const SizedBox(height: 12),
+                Text(
+                  '다음 내용을 일정으로 추가할까요?',
+                  style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                    height: 1.4,
+                    color: Colors.grey[600],
                   ),
                   textAlign: TextAlign.center,
                 ),
-              ),
-              const SizedBox(height: 24),
-
-              // 버튼들
-              Row(
-                children: [
-                  // 취소 버튼
-                  Expanded(
-                    child: SizedBox(
-                      height: 48,
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.grey[700],
-                          side: BorderSide(color: Colors.grey[300]!),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 20),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[200]!),
+                  ),
+                  child: Text(
+                    voiceText,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                      height: 1.4,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.grey[700],
+                            side: BorderSide(color: Colors.grey[300]!),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                        ),
-                        child: const Text(
-                          '취소',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                          child: const Text(
+                            '취소',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-
-                  // 일정 추가 버튼
-                  Expanded(
-                    child: SizedBox(
-                      height: 48,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(context).pop(true),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.black,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
                           ),
-                          elevation: 0,
-                        ),
-                        child: const Text(
-                          '일정 추가',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                          child: const Text(
+                            '일정 추가',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     ) ?? false;
-    print('User confirmed processing: $shouldProcess'); // 영어 로그
-    print('사용자 처리 확인: $shouldProcess'); // 한글 로그
 
     if (!shouldProcess) {
       setState(() {
@@ -403,160 +420,632 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // 로딩 표시
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
+    // ✨ 🔥 핵심 해결책: 로딩 다이얼로그 생성 및 참조 보관
+    OverlayEntry? loadingOverlay;
 
     try {
-      print('Processing schedule data using Lambda...'); // 영어 로그
-      print('Lambda를 사용하여 일정 데이터 처리 중...'); // 한글 로그
+      // 1️⃣ 터치 차단용 오버레이 생성
+      loadingOverlay = OverlayEntry(
+        builder: (context) => Container(
+          color: Colors.black.withOpacity(0.5),
+          child: Center(
+            child: TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 500),
+              tween: Tween(begin: 0.0, end: 1.0),
+              builder: (context, value, child) {
+                return Transform.scale(
+                  scale: 0.8 + (0.2 * value),
+                  child: Opacity(
+                    opacity: value,
+                    child: Container(
+                      padding: const EdgeInsets.all(32),
+                      margin: const EdgeInsets.symmetric(horizontal: 40),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // 로딩 애니메이션
+                          Container(
+                            width: 80,
+                            height: 80,
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8F9FA),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 4,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.black87),
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          const Text(
+                            '일정 최적화 중',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            '다양한 여행 옵션을 생성하고 있습니다.\n잠시만 기다려주세요...',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Color(0xFF6B7280),
+                              height: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          // 진행 상태 표시
+                          _buildAnimatedProgressSteps(),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
 
-      // AWS Lambda API 호출로 처리
+      // 2️⃣ 오버레이를 화면에 표시 (전체 화면 터치 차단)
+      Overlay.of(context).insert(loadingOverlay);
+
+      print('Processing schedule data using Lambda...');
+      print('Lambda를 사용하여 일정 데이터 처리 중...');
+
+      // AWS Lambda API 호출
       final scheduleData = await _processScheduleDataWithLambda(voiceText);
-      print('Calling AWS Lambda API...'); // 영어 로그
-      print('AWS Lambda API 호출 중...'); // 한글 로그
-
-      // 로딩 다이얼로그 닫기
-      Navigator.of(context).pop();
 
       if (scheduleData != null) {
         print('Schedule data processed successfully: $scheduleData');
-        print('일정 데이터 처리 성공: $scheduleData');
 
-        // scheduleProvider를 이용해 최적화 요청
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final provider = ScheduleProvider(authProvider: authProvider);
 
-        try {
-          print('Optimizing schedules...');
-          print('일정 최적화 중...');
+        // Lambda 응답 처리
+        List<List<Map<String, dynamic>>> allScheduleOptions = [];
 
-          // ✅ Lambda 응답 구조 변경에 따른 수정
-          // 새로운 구조: { "options": [ { "optionId": 1, "fixedSchedules": [...], "flexibleSchedules": [...] } ] }
+        if (scheduleData.containsKey('options') && scheduleData['options'] is List) {
+          List<dynamic> options = scheduleData['options'];
 
-          List<List<Map<String, dynamic>>> allScheduleOptions = [];
+          for (var option in options) {
+            if (option is Map<String, dynamic>) {
+              List<Map<String, dynamic>> singleOptionSchedules = [];
 
-          // Lambda에서 받은 여러 옵션을 처리
-          if (scheduleData.containsKey('options') && scheduleData['options'] is List) {
-            List<dynamic> options = scheduleData['options'];
+              if (option.containsKey('fixedSchedules') && option['fixedSchedules'] is List) {
+                List<dynamic> fixedSchedules = option['fixedSchedules'];
+                singleOptionSchedules.addAll(
+                    fixedSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
+                );
+              }
 
-            for (var option in options) {
-              if (option is Map<String, dynamic>) {
-                List<Map<String, dynamic>> singleOptionSchedules = [];
+              if (option.containsKey('flexibleSchedules') && option['flexibleSchedules'] is List) {
+                List<dynamic> flexibleSchedules = option['flexibleSchedules'];
+                singleOptionSchedules.addAll(
+                    flexibleSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
+                );
+              }
 
-                // 고정 일정 추가
-                if (option.containsKey('fixedSchedules') && option['fixedSchedules'] is List) {
-                  List<dynamic> fixedSchedules = option['fixedSchedules'];
-                  singleOptionSchedules.addAll(
-                      fixedSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
-                  );
-                  print('Added ${fixedSchedules.length} fixed schedules from option ${option['optionId']}');
-                  print('옵션 ${option['optionId']}에서 ${fixedSchedules.length}개의 고정 일정 추가됨');
-                }
-
-                // 유연한 일정 추가
-                if (option.containsKey('flexibleSchedules') && option['flexibleSchedules'] is List) {
-                  List<dynamic> flexibleSchedules = option['flexibleSchedules'];
-                  singleOptionSchedules.addAll(
-                      flexibleSchedules.map((schedule) => Map<String, dynamic>.from(schedule)).toList()
-                  );
-                  print('Added ${flexibleSchedules.length} flexible schedules from option ${option['optionId']}');
-                  print('옵션 ${option['optionId']}에서 ${flexibleSchedules.length}개의 유연한 일정 추가됨');
-                }
-
-                // 일정이 있는 옵션만 추가
-                if (singleOptionSchedules.isNotEmpty) {
-                  allScheduleOptions.add(singleOptionSchedules);
-                }
+              if (singleOptionSchedules.isNotEmpty) {
+                allScheduleOptions.add(singleOptionSchedules);
               }
             }
           }
+        }
 
-          print('Total schedule options to process: ${allScheduleOptions.length}');
-          print('처리할 일정 옵션 총 개수: ${allScheduleOptions.length}');
+        if (allScheduleOptions.isEmpty) {
+          throw Exception('처리할 일정 데이터가 없습니다.');
+        }
 
-          if (allScheduleOptions.isEmpty) {
-            throw Exception('처리할 일정 데이터가 없습니다.');
-          }
+        // 3️⃣ 최적화 수행
+        if (allScheduleOptions.length > 1) {
+          final multipleOptimizeResponse = await provider.optimizeMultipleScheduleOptions(allScheduleOptions);
 
-          // ✅ 다중 옵션이 있으면 다중 최적화, 단일 옵션이면 단일 최적화
-          if (allScheduleOptions.length > 1) {
-            // 여러 옵션이 있으면 다중 옵션 비교 화면으로
-            print('Multiple options detected, using multiple optimization');
-            print('다중 옵션 감지, 다중 최적화 사용');
+          // 4️⃣ 새 화면 준비 완료 후 오버레이 제거하고 화면 전환
+          loadingOverlay.remove();
+          loadingOverlay = null;
 
-            final multipleOptimizeResponse = await provider.optimizeMultipleScheduleOptions(allScheduleOptions);
-
-            // 다중 옵션 비교 화면으로 이동
+          // 즉시 화면 전환 (지연 없음)
+          if (mounted) {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(
-                builder: (context) => MultipleOptionsScreen(
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) => MultipleOptionsScreen(
                   multipleResponse: multipleOptimizeResponse,
                 ),
+                transitionDuration: const Duration(milliseconds: 300),
+                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  return SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(1.0, 0.0),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    )),
+                    child: FadeTransition(
+                      opacity: animation,
+                      child: child,
+                    ),
+                  );
+                },
               ),
             );
-          } else {
-            // 단일 옵션이면 기존 방식 사용
-            print('Single option detected, using single optimization');
-            print('단일 옵션 감지, 단일 최적화 사용');
+          }
+        } else {
+          final multipleOptimizeResponse = await provider.optimizeSchedules(allScheduleOptions.first);
 
-            final multipleOptimizeResponse = await provider.optimizeSchedules(allScheduleOptions.first);
+          if (multipleOptimizeResponse.optimizedOptions.isNotEmpty) {
+            final firstOption = multipleOptimizeResponse.optimizedOptions.first;
 
-            if (multipleOptimizeResponse.optimizedOptions.isNotEmpty) {
-              final firstOption = multipleOptimizeResponse.optimizedOptions.first;
+            // 오버레이 제거 후 화면 전환
+            loadingOverlay.remove();
+            loadingOverlay = null;
 
+            if (mounted) {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (context) => OptimizedScheduleScreen(
+                PageRouteBuilder(
+                  pageBuilder: (context, animation, secondaryAnimation) => OptimizedScheduleScreen(
                     optimizedData: firstOption.result,
+                  ),
+                  transitionDuration: const Duration(milliseconds: 300),
+                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                    return SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(1.0, 0.0),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      )),
+                      child: FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      ),
+                    );
+                  },
+                ),
+              );
+            }
+          } else {
+            throw Exception('최적화 결과가 없습니다.');
+          }
+        }
+
+        // 성공 메시지
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Text('음성으로 일정이 추가되었습니다!'),
+                ],
+              ),
+              backgroundColor: Colors.green[600],
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              margin: const EdgeInsets.all(16),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        throw Exception('음성에서 일정 정보를 추출할 수 없습니다');
+      }
+    } catch (e) {
+      print('Error processing voice input: $e');
+
+      // 5️⃣ 오류 발생 시 오버레이 제거
+      if (loadingOverlay != null) {
+        loadingOverlay.remove();
+        loadingOverlay = null;
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('오류가 발생했습니다: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red[600],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+// 🎨 진행 상태 애니메이션 위젯
+  Widget _buildAnimatedProgressSteps() {
+    return Column(
+      children: [
+        // 1단계: 음성 분석 완료 (항상 완료 상태)
+        TweenAnimationBuilder<double>(
+          duration: const Duration(milliseconds: 500),
+          tween: Tween(begin: 0.0, end: 1.0),
+          builder: (context, value, child) {
+            return _buildProgressStep(
+              icon: Icons.check_circle,
+              text: '음성 분석 완료',
+              isCompleted: true,
+              isActive: false,
+              opacity: value,
+              completionProgress: 1.0, // 항상 100% 완료
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+
+        // 2단계: 최적 경로 계산 중 (3초 후 완료)
+        TweenAnimationBuilder<double>(
+          duration: const Duration(milliseconds: 3000), // 3초 동안 진행
+          tween: Tween(begin: 0.0, end: 1.0),
+          builder: (context, value, child) {
+            bool isActive = value > 0.1; // 0.3초 후 시작
+            bool isCompleted = value > 0.7; // 70% 진행 후 완료
+
+            return _buildProgressStep(
+              icon: isCompleted ? Icons.check_circle : Icons.route,
+              text: isCompleted ? '최적 경로 계산 완료' : '최적 경로 계산 중...',
+              isCompleted: isCompleted,
+              isActive: isActive && !isCompleted,
+              opacity: isActive ? 1.0 : 0.4,
+              completionProgress: value,
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+
+        // 3단계: 여러 옵션 생성 중 (5초 후 완료)
+        TweenAnimationBuilder<double>(
+          duration: const Duration(milliseconds: 5000), // 5초 동안 진행
+          tween: Tween(begin: 0.0, end: 1.0),
+          builder: (context, value, child) {
+            bool isActive = value > 0.3; // 1.5초 후 시작
+            bool isCompleted = value > 0.8; // 80% 진행 후 완료
+
+            return _buildProgressStep(
+              icon: isCompleted ? Icons.check_circle : Icons.auto_awesome,
+              text: isCompleted ? '여러 옵션 생성 완료' : '여러 옵션 생성 중...',
+              isCompleted: isCompleted,
+              isActive: isActive && !isCompleted,
+              opacity: isActive ? 1.0 : 0.4,
+              completionProgress: value,
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProgressStep({
+    required IconData icon,
+    required String text,
+    required bool isCompleted,
+    bool isActive = false,
+    double opacity = 1.0,
+    double completionProgress = 0.0,
+  }) {
+    return Opacity(
+      opacity: opacity,
+      child: Row(
+        children: [
+          // 🎯 상태별 아이콘 컨테이너
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isCompleted
+                  ? Colors.green[500]  // ✅ 완료: 초록색
+                  : isActive
+                  ? Colors.blue[500]  // 🔄 진행중: 파란색
+                  : Colors.grey[300], // ⏸️ 대기: 회색
+              boxShadow: isCompleted || isActive ? [
+                BoxShadow(
+                  color: (isCompleted ? Colors.green[200] : Colors.blue[200])!,
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ] : null,
+            ),
+            child: isCompleted
+                ? Icon(
+              Icons.check,
+              size: 14,
+              color: Colors.white,
+            )
+                : isActive
+                ? SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                // 실제 진행률 표시 (선택사항)
+                value: completionProgress > 0.1 ? null : null, // 무한 회전 유지
+              ),
+            )
+                : Icon(
+              Icons.radio_button_unchecked,
+              size: 14,
+              color: Colors.grey[400],
+            ),
+          ),
+          const SizedBox(width: 16),
+
+          // 📝 텍스트 영역
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 메인 텍스트
+                Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isCompleted
+                        ? Colors.green[700]    // ✅ 완료: 초록색 텍스트
+                        : isActive
+                        ? Colors.blue[700] // 🔄 진행중: 파란색 텍스트
+                        : Colors.grey[500], // ⏸️ 대기: 회색 텍스트
+                    fontWeight: isCompleted || isActive
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                  ),
+                ),
+
+                // 🚫 진행률 바 제거 (노란 줄 없애기)
+                // 대신 완료 시 작은 체크 애니메이션 추가
+                if (isCompleted)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: TweenAnimationBuilder<double>(
+                      duration: const Duration(milliseconds: 300),
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      builder: (context, value, child) {
+                        return Opacity(
+                          opacity: value,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle_outline,
+                                size: 12,
+                                color: Colors.green[600],
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '완료됨',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.green[600],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // 🎉 완료 시 작은 성공 아이콘 추가
+          if (isCompleted)
+            TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 500),
+              tween: Tween(begin: 0.0, end: 1.0),
+              builder: (context, value, child) {
+                return Transform.scale(
+                  scale: value,
+                  child: Icon(
+                    Icons.verified,
+                    size: 16,
+                    color: Colors.green[500],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+// 🎊 추가: 전체 완료 시 성공 애니메이션을 위한 오버레이 업데이트
+  OverlayEntry _createLoadingOverlay() {
+    return OverlayEntry(
+      builder: (context) => Container(
+        color: Colors.black.withOpacity(0.6), // 약간 더 진한 배경
+        child: Center(
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 600),
+            tween: Tween(begin: 0.0, end: 1.0),
+            builder: (context, value, child) {
+              return Transform.scale(
+                scale: 0.7 + (0.3 * value),
+                child: Opacity(
+                  opacity: value,
+                  child: Container(
+                    padding: const EdgeInsets.all(32),
+                    margin: const EdgeInsets.symmetric(horizontal: 40),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24), // 더 둥근 모서리
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.15),
+                          blurRadius: 30,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 🎯 메인 로딩 아이콘
+                        Container(
+                          width: 88,
+                          height: 88,
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8F9FA),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.08),
+                                blurRadius: 15,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: const CircularProgressIndicator(
+                            strokeWidth: 4,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.black87),
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+
+                        // 📋 제목
+                        const Text(
+                          '일정 최적화 중',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.black87,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // 📝 설명
+                        const Text(
+                          '다양한 여행 옵션을 생성하고 있습니다.\n잠시만 기다려주세요...',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Color(0xFF6B7280),
+                            height: 1.6,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+
+                        // 🔄 진행 상태 표시
+                        _buildAnimatedProgressSteps(),
+                      ],
+                    ),
                   ),
                 ),
               );
-            } else {
-              throw Exception('최적화 결과가 없습니다.');
-            }
-          }
+            },
+          ),
+        ),
+      ),
+    );
+  }
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('음성으로 일정이 추가되었습니다!')),
-          );
-
-        } catch (e) {
-          print('Error optimizing schedules: $e');
-          print('일정 최적화 오류: $e');
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('일정 최적화 중 오류가 발생했습니다: $e')),
-          );
-        }
-      }else {
-        print('Failed to extract schedule data from voice input'); // 영어 로그
-        print('음성 입력에서 일정 데이터 추출 실패'); // 한글 로그
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('음성에서 일정 정보를 추출할 수 없습니다')),
+// 진행 단계 표시 위젯 (헬퍼 메서드)
+  Widget _buildProcessStep({
+    required IconData icon,
+    required String text,
+    required bool isCompleted,
+    bool isActive = false,
+    int delay = 0,
+  }) {
+    return TweenAnimationBuilder<double>(
+      duration: Duration(milliseconds: 800 + delay),
+      tween: Tween(begin: 0.0, end: 1.0),
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 20 * (1 - value)),
+            child: Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isCompleted
+                        ? Colors.green[500]
+                        : isActive
+                        ? Colors.blue[500]
+                        : Colors.grey[300],
+                  ),
+                  child: isCompleted
+                      ? Icon(Icons.check, size: 12, color: Colors.white)
+                      : isActive
+                      ? SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isCompleted
+                          ? Colors.green[700]
+                          : isActive
+                          ? Colors.blue[700]
+                          : Colors.grey[500],
+                      fontWeight: isCompleted || isActive
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
-      }
-    } catch (e) {
-      // 로딩 다이얼로그 닫기
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
-      }
-
-      print('Error processing voice input: $e'); // 영어 로그
-      print('음성 입력 처리 오류: $e'); // 한글 로그
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('오류가 발생했습니다: $e')),
-      );
-    }
+      },
+    );
   }
 
   // AWS Lambda로 일정 데이터 처리 메소드
