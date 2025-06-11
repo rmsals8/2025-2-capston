@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import '../../models/multiple_schedule_response.dart';
 import 'optimized_schedule_screen.dart';
+import '../main_navigation.dart';
 
 class MultipleOptionsScreen extends StatefulWidget {
   final MultipleOptimizeResponse multipleResponse;
@@ -27,8 +28,14 @@ class _MultipleOptionsScreenState extends State<MultipleOptionsScreen> {
         elevation: 0,
         toolbarHeight: 80,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+          icon: const Icon(Icons.home, color: Colors.black),
+          onPressed: () {
+            // 모든 일정 관련 화면을 제거하고 MainNavigation으로 이동
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (context) => const MainNavigation()),
+                  (route) => route.isFirst, // 첫 번째 route(로그인 상태)는 유지
+            );
+          },
         ),
         title: const Text(
           '옵션 비교',
@@ -417,8 +424,8 @@ class _MultipleOptionsScreenState extends State<MultipleOptionsScreen> {
   }
 
   void _viewOptionDetail(OptimizedOption option) {
-    // OptimizedScheduleScreen으로 이동
-    Navigator.push(
+    // ✅ Navigator.push 대신 pushReplacement 사용
+    Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (context) => OptimizedScheduleScreen(

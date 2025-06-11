@@ -493,7 +493,7 @@ class _HomeScreenState extends State<HomeScreen> {
             final multipleOptimizeResponse = await provider.optimizeMultipleScheduleOptions(allScheduleOptions);
 
             // 다중 옵션 비교 화면으로 이동
-            Navigator.push(
+            Navigator.pushReplacement(
               context,
               MaterialPageRoute(
                 builder: (context) => MultipleOptionsScreen(

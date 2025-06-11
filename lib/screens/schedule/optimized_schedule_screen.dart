@@ -9,7 +9,7 @@ import 'package:trip_helper/screens/schedule/saved_schedule_list_screen.dart';
 import 'package:trip_helper/services/schedule_save_service.dart';
 import 'package:trip_helper/widgets/save_schedule_dialog.dart';
 import 'dart:math';
-
+import '../main_navigation.dart';
 class OptimizedScheduleScreen extends StatefulWidget {
   final Map<String, dynamic> optimizedData;
 
@@ -48,8 +48,14 @@ class _OptimizedScheduleScreenState extends State<OptimizedScheduleScreen> {
         elevation: 0,
         toolbarHeight: 80,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+          icon: const Icon(Icons.home, color: Colors.black),
+          onPressed: () {
+            // 모든 일정 관련 화면을 제거하고 MainNavigation으로 이동
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (context) => const MainNavigation()),
+                  (route) => route.isFirst, // 첫 번째 route(로그인 상태)는 유지
+            );
+          },
         ),
         title: const Text(
           '최적화된 일정',
